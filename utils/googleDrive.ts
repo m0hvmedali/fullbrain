@@ -10,8 +10,6 @@ const SCOPES = 'https://www.googleapis.com/auth/drive.readonly';
 const DISCOVERY_DOCS = ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"];
 
 let tokenClient: any = null;
-let gapiInited = false;
-let pickerInited = false;
 let accessToken: string | null = null;
 
 export const initGoogleDrive = () => {
@@ -26,13 +24,10 @@ export const initGoogleDrive = () => {
   gapi.load('client', async () => {
     try {
       await gapi.client.init({ apiKey: API_KEY, discoveryDocs: DISCOVERY_DOCS });
-      gapiInited = true;
     } catch (e) { console.error("GAPI Init Error:", e); }
   });
 
-  gapi.load('picker', () => { pickerInited = true; });
-
-  if (CLIENT_ID) {
+  if (google.accounts?.oauth2) {
     tokenClient = google.accounts.oauth2.initTokenClient({
       client_id: CLIENT_ID,
       scope: SCOPES,
@@ -41,13 +36,13 @@ export const initGoogleDrive = () => {
   }
 };
 
-export type DriveSelection = { id: string, name: string, isFolder: boolean };
+export type DriveSelection = { id: string, name: string, isFolder: boolean, mimeType: string };
 
 export const openPicker = async (): Promise<DriveSelection | null> => {
   const google = (window as any).google;
   
   return new Promise((resolve, reject) => {
-    if (!tokenClient) return reject(new Error("Client not ready"));
+    if (!tokenClient) return reject(new Error("Drive client not ready"));
 
     tokenClient.callback = async (response: any) => {
       if (response.error) return reject(response.error);
@@ -63,7 +58,12 @@ export const openPicker = async (): Promise<DriveSelection | null> => {
         .setCallback((data: any) => {
           if (data.action === google.picker.Action.PICKED) {
             const doc = data.docs[0];
-            resolve({ id: doc.id, name: doc.name, isFolder: doc.mimeType === 'application/vnd.google-apps.folder' });
+            resolve({ 
+              id: doc.id, 
+              name: doc.name, 
+              isFolder: doc.mimeType === 'application/vnd.google-apps.folder',
+              mimeType: doc.mimeType
+            });
           } else if (data.action === google.picker.Action.CANCEL) resolve(null);
         })
         .build();
@@ -75,18 +75,32 @@ export const openPicker = async (): Promise<DriveSelection | null> => {
 };
 
 /**
- * استخدام Fetch مباشرة لتحميل الملفات الكبيرة لتجنب مشاكل ذاكرة GAPI
+ * جلب محتوى الملف مع دعم تصدير مستندات جوجل (Docs/Sheets) لتجنب الخطأ 403
  */
-export const fetchFileContent = async (fileId: string): Promise<string> => {
+export const fetchFileContent = async (fileId: string, mimeType?: string): Promise<string> => {
   if (!accessToken) throw new Error("No Access Token");
-  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+  
+  // إذا كان الملف هو مستند جوجل، يجب تصديره كـ نص خام
+  const isGoogleDoc = mimeType?.startsWith('application/vnd.google-apps');
+  const url = isGoogleDoc 
+    ? `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain`
+    : `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
+
+  const response = await fetch(url, {
     headers: { 'Authorization': `Bearer ${accessToken}` }
   });
-  if (!response.ok) throw new Error("Failed to fetch file");
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("Drive Fetch Error:", errorText);
+    if (response.status === 403) throw new Error("Permission Denied (403): Check file permissions or OAuth scopes.");
+    throw new Error(`Failed to fetch file: ${response.statusText}`);
+  }
+
   return await response.text();
 };
 
-export const fetchFolderFiles = async (folderId: string): Promise<{ id: string, name: string }[]> => {
+export const fetchFolderFiles = async (folderId: string): Promise<{ id: string, name: string, mimeType: string }[]> => {
   const gapi = (window as any).gapi;
   const response = await gapi.client.drive.files.list({
     q: `'${folderId}' in parents and trashed = false`,
