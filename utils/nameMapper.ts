@@ -11,6 +11,15 @@ const LOCAL_NAME_DICTIONARY: Record<string, string[]> = {
   "ChatGPT": ["assistant", "gpt", "ai", "bot"]
 };
 
+// الوصول الآمن لمفتاح API في بيئة المتصفح
+const getApiKey = () => {
+  try {
+    return (globalThis as any).process?.env?.API_KEY;
+  } catch {
+    return undefined;
+  }
+};
+
 export const isSamePerson = async (name1: string, name2: string): Promise<boolean> => {
   const n1 = name1.toLowerCase().trim();
   const n2 = name2.toLowerCase().trim();
@@ -24,9 +33,10 @@ export const isSamePerson = async (name1: string, name2: string): Promise<boolea
   }
 
   // 2. استخدام Gemini API (فقط لمطابقة الأسماء كما هو مطلوب)
-  if (process.env.API_KEY) {
+  const apiKey = getApiKey();
+  if (apiKey) {
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: `Is the identity of "${name1}" and "${name2}" likely the same person in a chat context? (e.g. Arabic vs English spelling). Reply ONLY with JSON: {"match": true/false}`,
@@ -35,7 +45,8 @@ export const isSamePerson = async (name1: string, name2: string): Promise<boolea
           temperature: 0.1 
         }
       });
-      const result = JSON.parse(response.text || '{"match": false}');
+      const text = response.text || '{"match": false}';
+      const result = JSON.parse(text);
       return result.match === true;
     } catch (e) {
       console.warn("Name AI lookup failed:", e);

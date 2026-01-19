@@ -20,14 +20,21 @@ const App: React.FC = () => {
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({
     keyword: '', sender: '', source: 'all', dateFrom: '', dateTo: '', minLength: 0
   });
 
   useEffect(() => {
     const loadMemory = async () => {
-      const saved = await getAllMessages();
-      setMessages(saved);
+      try {
+        const saved = await getAllMessages();
+        setMessages(saved || []);
+      } catch (err) {
+        console.error("Failed to load IndexedDB data:", err);
+      } finally {
+        setIsLoaded(true);
+      }
     };
     loadMemory();
   }, []);
@@ -76,7 +83,6 @@ const App: React.FC = () => {
     return [];
   }, [messages, selectedConversationId, activeView, searchFilters]);
 
-  // Heatmap Data (Activity over the last 30 days)
   const activityHeatmap = useMemo(() => {
     const last30Days = Array.from({length: 30}, (_, i) => {
       const d = new Date();
@@ -98,6 +104,10 @@ const App: React.FC = () => {
       intensity: (counts[date] || 0) / max
     }));
   }, [messages]);
+
+  if (!isLoaded) {
+    return <div className="h-screen w-screen bg-[#060606] flex items-center justify-center text-indigo-500 font-bold">جاري تحميل الذاكرة...</div>;
+  }
 
   return (
     <div className="flex h-screen bg-[#060606] text-[#E0E0E0] overflow-hidden selection:bg-indigo-500/30" dir="rtl">
@@ -141,7 +151,6 @@ const App: React.FC = () => {
                   قم برفع ملفات WhatsApp أو Instagram أو ChatGPT لتبدأ فهرسة ذاكرتك الرقمية. جميع البيانات تُعالج محلياً 100%.
                 </p>
                 
-                {/* Real Heatmap Display */}
                 <div className="mb-10">
                   <p className="text-[10px] text-gray-500 uppercase font-black mb-3 tracking-widest flex items-center justify-center gap-2">
                     <Activity size={12}/> خريطة النشاط (آخر 30 يوم)
