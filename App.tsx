@@ -42,18 +42,54 @@ const App: React.FC = () => {
   }, []);
 
   const handleFiles = async (files: FileList) => {
-    let newMessages: StandardizedMessage[] = [];
-    for (let i = 0; i < files.length; i++) {
-      const parsed = await processFile(files[i]);
-      newMessages = [...newMessages, ...parsed];
+    if (!files || files.length === 0) {
+      setIsImporting(false);
+      return;
     }
-    updateMessageState(newMessages);
-    setIsImporting(false);
+
+    setIsSyncing(true);
+    setSyncStatus({ type: 'idle', message: 'جاري معالجة الملفات المرفوعة...' });
+    
+    try {
+      const fileArray = Array.from(files);
+      // معالجة الملفات بالتوازي لتحسين الأداء
+      const parsedResults = await Promise.all(
+        fileArray.map(async (file) => {
+          try {
+            return await processFile(file);
+          } catch (err) {
+            console.error(`Error parsing file ${file.name}:`, err);
+            return [];
+          }
+        })
+      );
+      
+      const newMessages = parsedResults.flat();
+      
+      if (newMessages.length > 0) {
+        await updateMessageState(newMessages);
+        setSyncStatus({ type: 'success', message: `تم استيراد ${newMessages.length} رسالة بنجاح.` });
+      } else {
+        setSyncStatus({ type: 'error', message: 'لم يتم العثور على بيانات صالحة في الملفات المختارة.' });
+      }
+    } catch (error) {
+      console.error("Batch processing error:", error);
+      setSyncStatus({ type: 'error', message: 'حدث خطأ أثناء معالجة الملفات.' });
+    } finally {
+      setIsSyncing(false);
+      setIsImporting(false);
+      setTimeout(() => setSyncStatus({ type: 'idle', message: '' }), 3000);
+    }
   };
 
   const updateMessageState = async (newMsgs: StandardizedMessage[]) => {
-    const updated = Array.from(new Map([...messages, ...newMsgs].map(m => [m.id, m])).values());
-    setMessages(updated);
+    // استخدام functional update لضمان عدم حدوث تعارض في الحالة
+    setMessages(prev => {
+      const combined = [...prev, ...newMsgs];
+      // إزالة التكرار بناءً على الـ ID
+      return Array.from(new Map(combined.map(m => [m.id, m])).values());
+    });
+    // حفظ في قاعدة البيانات المحلية
     await saveMessages(newMsgs);
   };
 
@@ -67,7 +103,7 @@ const App: React.FC = () => {
         return;
       }
       
-      setSyncStatus({ type: 'idle', message: 'جاري جلب الملفات من المجلد المختارة...' });
+      setSyncStatus({ type: 'idle', message: 'جاري جلب الملفات من المجلد المختار...' });
       const driveFiles = await fetchFolderFiles(folderId);
       
       let allParsed: StandardizedMessage[] = [];

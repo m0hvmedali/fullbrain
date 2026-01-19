@@ -7,15 +7,16 @@
 const getEnv = (key: string) => (globalThis as any).process?.env?.[key] || '';
 
 // استخدام المفاتيح التي قدمها المستخدم كقيم افتراضية
-const CLIENT_ID = getEnv('GDRIVE_CLIENT_ID') || '671438620010-scp9l4qvqa8u9qi3inpp2d5dv01b0u2q.apps.googleusercontent.com';
-const API_KEY = getEnv('GDRIVE_API_KEY') || 'AIzaSyAZtXQNn-U0_CJzY-xxrn2w_8LiKgYclL8';
+const CLIENT_ID = getEnv('GDRIVE_CLIENT_ID');
+const API_KEY = getEnv('GDRIVE_API_KEY');
+
 
 const SCOPES = 'https://www.googleapis.com/auth/drive.readonly';
 const DISCOVERY_DOCS = ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"];
 
 let tokenClient: any = null;
 let gapiInited = false;
-let gisInited = false;
+let pickerInited = false;
 
 export const initGoogleDrive = () => {
   const gapi = (window as any).gapi;
@@ -36,7 +37,10 @@ export const initGoogleDrive = () => {
         });
         gapiInited = true;
         // Load Picker library
-        gapi.load('picker', () => { console.log('Picker loaded'); });
+        gapi.load('picker', () => { 
+          pickerInited = true;
+          console.log('Picker library fully loaded'); 
+        });
       } catch (e) {
         console.error("GAPI Init error:", e);
       }
@@ -51,18 +55,30 @@ export const initGoogleDrive = () => {
         scope: SCOPES,
         callback: '', // Defined later in openPicker
       });
-      gisInited = true;
     } catch (e) {
       console.error("GIS Init error:", e);
     }
   }
 };
 
-export const openPicker = (): Promise<string | null> => {
-  return new Promise((resolve, reject) => {
-    const google = (window as any).google;
-    const gapi = (window as any).gapi;
+const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 
+export const openPicker = async (): Promise<string | null> => {
+  const google = (window as any).google;
+  const gapi = (window as any).gapi;
+
+  // الانتظار قليلاً إذا لم تكن المكتبة جاهزة بعد
+  let attempts = 0;
+  while (!pickerInited && attempts < 10) {
+    await wait(500);
+    attempts++;
+  }
+
+  if (!pickerInited) {
+    throw new Error("مكتبة Google Picker لم تكتمل في التحميل بعد. يرجى المحاولة مرة أخرى.");
+  }
+
+  return new Promise((resolve, reject) => {
     if (!CLIENT_ID || CLIENT_ID.trim() === "" || !API_KEY || API_KEY.trim() === "") {
       reject(new Error("GDRIVE_CLIENT_ID or GDRIVE_API_KEY is missing."));
       return;
@@ -75,34 +91,41 @@ export const openPicker = (): Promise<string | null> => {
 
     tokenClient.callback = async (response: any) => {
       if (response.error !== undefined) {
-        reject(response);
+        reject(new Error(`OAuth Error: ${response.error}`));
         return;
       }
       
       const accessToken = response.access_token;
       
-      // إصلاح: إنشاء الـ View بشكل منفصل لتجنب أخطاء التسلسل (Chaining) في حال عدم توفر بعض الوظائف
-      const docsView = new google.picker.DocsView(google.picker.ViewId.FOLDERS);
-      
-      // التحقق من وجود الوظيفة قبل الاستدعاء لتجنب TypeError
-      if (typeof docsView.setSelectableMimeTypes === 'function') {
-        docsView.setSelectableMimeTypes('application/vnd.google-apps.folder');
-      }
-
-      const picker = new google.picker.PickerBuilder()
-        .addView(docsView)
-        .setOAuthToken(accessToken)
-        .setDeveloperKey(API_KEY)
-        .setCallback((data: any) => {
-          if (data.action === google.picker.Action.PICKED) {
-            resolve(data.docs[0].id);
-          } else if (data.action === google.picker.Action.CANCEL) {
-            resolve(null);
-          }
-        })
-        .build();
+      try {
+        // إنشاء الـ View بطريقة أكثر أماناً
+        const docsView = new google.picker.DocsView();
+        docsView.setIncludeFolders(true);
+        docsView.setMimeTypes('application/vnd.google-apps.folder');
         
-      picker.setVisible(true);
+        // التحقق من وجود الوظيفة قبل الاستدعاء لتجنب TypeError في المتصفحات المختلفة
+        if (typeof docsView.setSelectableMimeTypes === 'function') {
+          docsView.setSelectableMimeTypes('application/vnd.google-apps.folder');
+        }
+
+        const picker = new google.picker.PickerBuilder()
+          .addView(docsView)
+          .setOAuthToken(accessToken)
+          .setDeveloperKey(API_KEY)
+          .setCallback((data: any) => {
+            if (data.action === google.picker.Action.PICKED) {
+              resolve(data.docs[0].id);
+            } else if (data.action === google.picker.Action.CANCEL) {
+              resolve(null);
+            }
+          })
+          .build();
+          
+        picker.setVisible(true);
+      } catch (err) {
+        console.error("Error building picker:", err);
+        reject(err);
+      }
     };
 
     if (gapi.client.getToken() === null) {

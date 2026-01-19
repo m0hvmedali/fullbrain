@@ -35,6 +35,10 @@
         .animate-fade-in {
             animation: fade-in 0.4s ease-out forwards;
         }
+        /* تحسينات لمنع تدخل المستمعين السلبيين في Recharts/Touch */
+        * {
+            touch-action: manipulation;
+        }
     </style>
 <script type="importmap">
 {
