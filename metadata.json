@@ -1,5 +1,7 @@
 {
   "name": "Memory Intelligence System",
   "description": "A high-performance personal conversation management platform with Google Drive sync and logic-based data analysis.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "microphone"
+  ]
 }

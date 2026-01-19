@@ -38,3 +38,11 @@ export interface SearchFilters {
   dateTo: string;
   minLength: number;
 }
+
+export interface PromptTemplate {
+  id: string;
+  title: string;
+  content: string;
+  category: string;
+  createdAt: number;
+}
