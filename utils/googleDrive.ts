@@ -80,8 +80,17 @@ export const openPicker = (): Promise<string | null> => {
       }
       
       const accessToken = response.access_token;
+      
+      // إصلاح: إنشاء الـ View بشكل منفصل لتجنب أخطاء التسلسل (Chaining) في حال عدم توفر بعض الوظائف
+      const docsView = new google.picker.DocsView(google.picker.ViewId.FOLDERS);
+      
+      // التحقق من وجود الوظيفة قبل الاستدعاء لتجنب TypeError
+      if (typeof docsView.setSelectableMimeTypes === 'function') {
+        docsView.setSelectableMimeTypes('application/vnd.google-apps.folder');
+      }
+
       const picker = new google.picker.PickerBuilder()
-        .addView(new google.picker.DocsView(google.picker.ViewId.FOLDERS).setSelectableMimeTypes('application/vnd.google-apps.folder'))
+        .addView(docsView)
         .setOAuthToken(accessToken)
         .setDeveloperKey(API_KEY)
         .setCallback((data: any) => {
@@ -92,6 +101,7 @@ export const openPicker = (): Promise<string | null> => {
           }
         })
         .build();
+        
       picker.setVisible(true);
     };
 
