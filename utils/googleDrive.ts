@@ -30,16 +30,14 @@ export const initGoogleDrive = () => {
   }
 
   gapi.load('client', async () => {
-    if (API_KEY) {
-      try {
-        await gapi.client.init({
-          apiKey: API_KEY,
-          discoveryDocs: DISCOVERY_DOCS,
-        });
-        gapiInited = true;
-      } catch (e) {
-        console.error("GAPI Client Init error:", e);
-      }
+    try {
+      await gapi.client.init({
+        apiKey: API_KEY,
+        discoveryDocs: DISCOVERY_DOCS,
+      });
+      gapiInited = true;
+    } catch (e) {
+      console.error("GAPI Client Init error:", e);
     }
   });
 
@@ -47,7 +45,7 @@ export const initGoogleDrive = () => {
     pickerInited = true;
   });
 
-  if (CLIENT_ID && CLIENT_ID.trim() !== "") {
+  if (CLIENT_ID) {
     try {
       tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
@@ -75,7 +73,7 @@ export const openPicker = async (): Promise<DriveSelection | null> => {
   }
 
   if (!pickerInited) {
-    throw new Error("مكتبة Google Picker لم تكتمل في التحميل. يرجى التحقق من اتصال الإنترنت.");
+    throw new Error("مكتبة Google Picker لم تكتمل في التحميل.");
   }
 
   return new Promise((resolve, reject) => {
@@ -93,13 +91,13 @@ export const openPicker = async (): Promise<DriveSelection | null> => {
       const accessToken = response.access_token;
       
       try {
-        const docsView = new google.picker.DocsView();
-        docsView.setIncludeFolders(true);
-        // السماح برؤية المجلدات والملفات المدعومة
-        docsView.setMimeTypes('application/vnd.google-apps.folder,text/plain,application/json,text/html');
-        
+        // عرض كافة الملفات والمجلدات بدون استثناء
+        const view = new google.picker.DocsView(google.picker.ViewId.DOCS);
+        view.setIncludeFolders(true);
+        view.setSelectableMimeTypes(''); // السماح بكل شيء
+
         const picker = new google.picker.PickerBuilder()
-          .addView(docsView)
+          .addView(view)
           .setOAuthToken(accessToken)
           .setDeveloperKey(API_KEY)
           .setCallback((data: any) => {
@@ -148,13 +146,14 @@ export const fetchFolderFiles = async (folderId: string): Promise<{ name: string
   }
 
   const response = await gapi.client.drive.files.list({
-    q: `'${folderId}' in parents and (mimeType = 'text/plain' or mimeType = 'application/json' or mimeType = 'text/html') and trashed = false`,
+    q: `'${folderId}' in parents and trashed = false`,
     fields: 'files(id, name, mimeType)',
   });
 
   const files = response.result.files || [];
   const fileContents = await Promise.all(files.map(async (file: any) => {
     try {
+      // جلب محتوى الملفات النصية فقط لتجنب الملفات الثنائية الضخمة
       const content = await fetchFileContent(file.id);
       return { name: file.name, content };
     } catch (e) {

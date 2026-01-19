@@ -3,7 +3,6 @@ import { StandardizedMessage, MessageSource, MessageDirection } from '../types';
 
 const generateId = () => Math.random().toString(36).substring(2, 15);
 
-// وظيفة فك تشفير نصوص Instagram العربية (UTF-8 encoded as ISO-8859-1)
 const decodeInstagramText = (text: string): string => {
   try {
     return decodeURIComponent(escape(text));
@@ -19,23 +18,51 @@ const analyzeMetrics = (content: string) => ({
   has_exclamation: content.includes('!'),
 });
 
+// المعالج العام لأي ملف نصي لا ينتمي لتنسيق محدد
+const parseGenericContent = (text: string, fileName: string): StandardizedMessage[] => {
+  const messages: StandardizedMessage[] = [];
+  // تقسيم النص إلى قطع (Chunks) بحجم 1500 حرف لسهولة المعالجة
+  const chunkSize = 1500;
+  // Added explicit string[] type to prevent TypeScript from inferring 'never[]' when the match result is empty
+  const chunks: string[] = text.match(new RegExp(`[\\s\\S]{1,${chunkSize}}`, 'g')) || [];
+
+  chunks.forEach((chunk, index) => {
+    messages.push({
+      id: `${fileName}_${index}_${generateId()}`,
+      source: 'whatsapp', // نعتبرها مادة خام للذاكرة
+      conversation_id: `raw_${fileName}`,
+      person_or_title: fileName,
+      timestamp: Date.now() - (chunks.length - index) * 1000,
+      sender: "بيانات خام",
+      direction: 'received',
+      content: chunk.trim(),
+      meta: analyzeMetrics(chunk)
+    });
+  });
+
+  return messages;
+};
+
 export const parseWhatsApp = (text: string, fileName: string): StandardizedMessage[] => {
   const messages: StandardizedMessage[] = [];
   const lines = text.split('\n');
-  const msgRegex = /^(\d{1,2}\/\d{1,2}\/\d{2,4}),\s(\d{1,2}:\d{2}\s?[AP]M)\s-\s([^:]+):\s(.*)$/i;
+  const standardRegex = /^(\d{1,2}[./-]\d{1,2}[./-]\d{2,4}),\s(\d{1,2}:\d{2}(?::\d{2})?\s?(?:[AP]M)?)\s-\s([^:]+):\s(.*)$/i;
+  const bracketRegex = /^\[(\d{1,2}[./-]\d{1,2}[./-]\d{2,4}),\s(\d{1,2}:\d{2}(?::\d{2})?)\]\s([^:]+):\s(.*)$/i;
+
   let currentMsg: StandardizedMessage | null = null;
 
   lines.forEach(line => {
-    const match = line.match(msgRegex);
+    const match = line.match(standardRegex) || line.match(bracketRegex);
     if (match) {
       const [_, date, time, sender, content] = match;
-      if (content.includes('<Media omitted>') || content.includes('encrypted')) return;
+      if (content.includes('<Media omitted>') || content.includes('تم حذف الوسائط')) return;
+      
       currentMsg = {
         id: generateId(),
         source: 'whatsapp',
         conversation_id: `wa_${fileName}`,
         person_or_title: sender.trim(),
-        timestamp: new Date(`${date} ${time}`).getTime() || Date.now(),
+        timestamp: new Date(`${date.replace(/\./g, '/')} ${time}`).getTime() || Date.now(),
         sender: sender.trim(),
         direction: 'received',
         content: content.trim(),
@@ -47,7 +74,9 @@ export const parseWhatsApp = (text: string, fileName: string): StandardizedMessa
       currentMsg.meta = analyzeMetrics(currentMsg.content);
     }
   });
-  return messages;
+  
+  // إذا لم ينجح في استخراج رسائل بتنسيق واتساب، نستخدم المعالج العام
+  return messages.length > 0 ? messages : parseGenericContent(text, fileName);
 };
 
 export const parseInstagram = (json: any, fileName: string): StandardizedMessage[] => {
@@ -74,27 +103,24 @@ export const parseInstagram = (json: any, fileName: string): StandardizedMessage
       });
     });
   }
-  return messages;
+  return messages.length > 0 ? messages : parseGenericContent(JSON.stringify(json), fileName);
 };
 
 export const parseChatGPT = (html: string, fileName: string): StandardizedMessage[] => {
   const messages: StandardizedMessage[] = [];
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
-  
-  // محاولة العثور على هيكل المحادثة في ملفات HTML المصدرة
   const messageElements = doc.querySelectorAll('.message, [class*="message"]');
   
   messageElements.forEach((el, idx) => {
     const role = el.textContent?.toLowerCase().includes('user') ? 'user' : 'assistant';
-    const content = el.querySelector('.content, [class*="content"]')?.textContent || el.textContent || '';
-    
+    const content = el.textContent || '';
     if (content.trim()) {
       messages.push({
         id: generateId(),
         source: 'chatgpt',
         conversation_id: `gpt_${fileName}`,
-        person_or_title: fileName.replace('.html', ''),
+        person_or_title: fileName,
         timestamp: Date.now() - (messageElements.length - idx) * 1000,
         sender: role === 'user' ? 'User' : 'ChatGPT',
         direction: role === 'user' ? 'sent' : 'received',
@@ -104,29 +130,36 @@ export const parseChatGPT = (html: string, fileName: string): StandardizedMessag
     }
   });
   
-  return messages;
+  return messages.length > 0 ? messages : parseGenericContent(html, fileName);
 };
 
 export const processRawData = async (data: string, fileName: string): Promise<StandardizedMessage[]> => {
   const name = fileName.toLowerCase();
   try {
     if (name.endsWith('.json')) {
-      const json = JSON.parse(data);
-      return parseInstagram(json, fileName);
+      try {
+        const json = JSON.parse(data);
+        return parseInstagram(json, fileName);
+      } catch {
+        return parseGenericContent(data, fileName);
+      }
     }
     if (name.endsWith('.html') || name.endsWith('.htm')) {
       return parseChatGPT(data, fileName);
     }
-    if (name.endsWith('.txt')) {
-      return parseWhatsApp(data, fileName);
-    }
+    // أي ملف آخر أو ملف نصي يعامل كمعالج عام إذا فشل واتساب
+    return parseWhatsApp(data, fileName);
   } catch (e) {
-    console.error("Error parsing file:", fileName, e);
+    return parseGenericContent(data, fileName);
   }
-  return [];
 };
 
 export const processFile = async (file: File): Promise<StandardizedMessage[]> => {
-  const text = await file.text();
-  return processRawData(text, file.name);
+  try {
+    const text = await file.text();
+    return processRawData(text, file.name);
+  } catch (err) {
+    console.error(`Failed to read file ${file.name}:`, err);
+    return [];
+  }
 };

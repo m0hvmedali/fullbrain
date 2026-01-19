@@ -60,7 +60,8 @@ const App: React.FC = () => {
       return;
     }
     setIsSyncing(true);
-    setSyncStatus({ type: 'idle', message: 'جاري معالجة الملفات...' });
+    setSyncStatus({ type: 'idle', message: 'جاري استيعاب الذاكرة...' });
+    
     try {
       const fileArray = Array.from(files);
       const parsedResults = await Promise.all(
@@ -68,7 +69,6 @@ const App: React.FC = () => {
           try {
             return await processFile(file);
           } catch (err) {
-            console.error(`Error parsing file ${file.name}:`, err);
             return [];
           }
         })
@@ -76,12 +76,12 @@ const App: React.FC = () => {
       const newMessages = parsedResults.flat();
       if (newMessages.length > 0) {
         await updateMessageState(newMessages);
-        setSyncStatus({ type: 'success', message: `تم بنجاح! استيراد ${newMessages.length} رسالة.` });
+        setSyncStatus({ type: 'success', message: `تم إضافة ${newMessages.length} ذكرى جديدة.` });
       } else {
-        setSyncStatus({ type: 'error', message: 'الملفات لا تحتوي على بيانات متوافقة.' });
+        setSyncStatus({ type: 'error', message: 'تعذر فهم محتوى هذه الملفات.' });
       }
     } catch (error) {
-      setSyncStatus({ type: 'error', message: 'حدث خطأ أثناء الرفع.' });
+      setSyncStatus({ type: 'error', message: 'حدث خطأ أثناء المعالجة.' });
     } finally {
       setIsSyncing(false);
       setIsImporting(false);
@@ -91,15 +91,16 @@ const App: React.FC = () => {
 
   const updateMessageState = async (newMsgs: StandardizedMessage[]) => {
     setMessages(prev => {
-      const combined = [...prev, ...newMsgs];
-      return Array.from(new Map(combined.map(m => [m.id, m])).values());
+      const uniqueMap = new Map();
+      [...prev, ...newMsgs].forEach(m => uniqueMap.set(m.id, m));
+      return Array.from(uniqueMap.values());
     });
     await saveMessages(newMsgs);
   };
 
   const handleGDriveSync = async () => {
     setIsSyncing(true);
-    setSyncStatus({ type: 'idle', message: 'جاري الاتصال بـ Google Drive...' });
+    setSyncStatus({ type: 'idle', message: 'جاري الاتصال بالسحابة...' });
     try {
       const selection = await openPicker();
       if (!selection) {
@@ -107,7 +108,7 @@ const App: React.FC = () => {
         return;
       }
 
-      setSyncStatus({ type: 'idle', message: `جاري جلب ${selection.name}...` });
+      setSyncStatus({ type: 'idle', message: `جاري سحب ${selection.name}...` });
       
       let allParsed: StandardizedMessage[] = [];
       if (selection.isFolder) {
@@ -123,12 +124,12 @@ const App: React.FC = () => {
 
       if (allParsed.length > 0) {
         await updateMessageState(allParsed);
-        setSyncStatus({ type: 'success', message: `تم المزامنة! (${allParsed.length} رسالة)` });
+        setSyncStatus({ type: 'success', message: `تمت المزامنة بنجاح.` });
       } else {
-        setSyncStatus({ type: 'error', message: 'لم يتم العثور على بيانات صالحة في الاختيار.' });
+        setSyncStatus({ type: 'error', message: 'الملف المختار فارغ أو غير نصي.' });
       }
     } catch (error: any) {
-      setSyncStatus({ type: 'error', message: `خطأ: ${error.message || 'فشلت المزامنة'}` });
+      setSyncStatus({ type: 'error', message: 'فشلت المزامنة.' });
     } finally {
       setIsSyncing(false);
       setTimeout(() => setSyncStatus({ type: 'idle', message: '' }), 5000);
@@ -170,146 +171,100 @@ const App: React.FC = () => {
   if (!isReady) {
     return (
       <div className="h-screen w-screen bg-[#060606] flex flex-col items-center justify-center gap-4">
-        <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-indigo-500 font-bold animate-pulse text-sm uppercase tracking-widest">MemIntell: Initializing Memory Core...</p>
+        <div className="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-indigo-500 font-bold animate-pulse text-xs uppercase tracking-widest">MemIntell: Loading Core...</p>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen bg-[#060606] text-[#E0E0E0] overflow-hidden" dir="rtl">
-      <div className="w-20 flex flex-col items-center py-10 border-l border-white/5 bg-[#080808] z-50">
-        <div className="mb-14">
-          <div className="w-12 h-12 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-600/20 cursor-pointer" onClick={() => setActiveView('dashboard')}>
-            <Database size={24} className="text-white" />
+    <div className="flex h-full w-full bg-[#060606] text-[#E0E0E0] overflow-hidden" dir="rtl">
+      {/* الشريط الجانبي الضيق للملاحة */}
+      <div className="w-16 flex flex-col items-center py-6 border-l border-white/5 bg-[#080808] z-50 shrink-0">
+        <div className="mb-8">
+          <div className="w-10 h-10 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-xl flex items-center justify-center shadow-lg cursor-pointer" onClick={() => setActiveView('dashboard')}>
+            <Database size={20} className="text-white" />
           </div>
         </div>
-        <nav className="flex flex-col gap-8 flex-1">
-          <NavButton active={activeView === 'dashboard'} onClick={() => setActiveView('dashboard')} icon={<Home size={22} />} label="الرئيسية" />
-          <NavButton active={activeView === 'chats'} onClick={() => setActiveView('chats')} icon={<MessageSquare size={22} />} label="المحادثات" />
-          <NavButton active={activeView === 'memory-ai'} onClick={() => setActiveView('memory-ai')} icon={<BrainCircuit size={22} />} label="اسأل ذاكرتك" />
-          <NavButton active={activeView === 'search'} onClick={() => setActiveView('search')} icon={<SearchIcon size={22} />} label="البحث" />
-          <NavButton active={activeView === 'analytics'} onClick={() => setActiveView('analytics')} icon={<PieChart size={22} />} label="الإحصائيات" />
-          <NavButton active={activeView === 'prompts'} onClick={() => setActiveView('prompts')} icon={<Sparkles size={22} />} label="القوالب الذكية" />
+        <nav className="flex flex-col gap-6 flex-1">
+          <NavButton active={activeView === 'dashboard'} onClick={() => setActiveView('dashboard')} icon={<Home size={20} />} label="الرئيسية" />
+          <NavButton active={activeView === 'chats'} onClick={() => setActiveView('chats')} icon={<MessageSquare size={20} />} label="المحادثات" />
+          <NavButton active={activeView === 'memory-ai'} onClick={() => setActiveView('memory-ai')} icon={<BrainCircuit size={20} />} label="الذاكرة الذكية" />
+          <NavButton active={activeView === 'search'} onClick={() => setActiveView('search')} icon={<SearchIcon size={20} />} label="البحث" />
+          <NavButton active={activeView === 'analytics'} onClick={() => setActiveView('analytics')} icon={<PieChart size={20} />} label="الإحصائيات" />
+          <NavButton active={activeView === 'prompts'} onClick={() => setActiveView('prompts')} icon={<Sparkles size={20} />} label="القوالب" />
         </nav>
-        <div className="flex flex-col gap-6 mt-auto">
-          <button 
-            onClick={() => setShowCommandPalette(true)}
-            className="group relative flex items-center justify-center p-3.5 rounded-2xl transition-all text-gray-500 hover:bg-white/5"
-          >
-            <Command size={22} />
-            <span className="absolute right-full mr-4 px-3 py-1.5 bg-black border border-white/10 text-[10px] font-bold rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 shadow-xl">الأوامر (Cmd+K)</span>
-          </button>
-          <NavButton active={false} onClick={() => setIsImporting(true)} icon={<Zap size={22} />} label="استيراد" color="text-yellow-500" />
-          <NavButton active={false} onClick={() => { if(confirm('مسح كل البيانات المحفوظة؟')) { clearAllMessages(); setMessages([]); } }} icon={<Trash2 size={22} />} label="مسح" color="text-red-500" />
+        <div className="flex flex-col gap-4 mt-auto">
+          <NavButton active={false} onClick={() => setIsImporting(true)} icon={<Zap size={20} />} label="استيراد" color="text-yellow-500" />
+          <NavButton active={false} onClick={() => { if(confirm('مسح كل الذاكرة؟')) { clearAllMessages(); setMessages([]); } }} icon={<Trash2 size={20} />} label="مسح" color="text-red-500" />
         </div>
       </div>
 
+      {/* قائمة المحادثات (تظهر فقط في عرض الدردشات أو الذاكرة) */}
       <Sidebar summaries={conversationSummaries} activeId={selectedConversationId} onSelect={(id) => { setSelectedConversationId(id); setActiveView('chats'); }} />
 
+      {/* المحتوى الرئيسي */}
       <main className="flex-1 flex flex-col relative overflow-hidden bg-[#060606]">
         {syncStatus.message && (
-          <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl flex items-center gap-3 animate-fade-in shadow-2xl border ${syncStatus.type === 'error' ? 'bg-red-900/20 border-red-500/30 text-red-400' : 'bg-indigo-900/20 border-indigo-500/30 text-indigo-400'}`}>
-            {isSyncing ? <Loader2 size={18} className="animate-spin" /> : syncStatus.type === 'error' ? <AlertCircle size={18} /> : <CheckCircle size={18} />}
-            <span className="text-xs font-bold">{syncStatus.message}</span>
+          <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[100] px-4 py-2 rounded-xl flex items-center gap-2 animate-fade-in shadow-xl border ${syncStatus.type === 'error' ? 'bg-red-900/20 border-red-500/30 text-red-400' : 'bg-indigo-900/20 border-indigo-500/30 text-indigo-400'}`}>
+            {isSyncing ? <Loader2 size={14} className="animate-spin" /> : <Info size={14} />}
+            <span className="text-[11px] font-bold">{syncStatus.message}</span>
           </div>
         )}
 
-        {activeView === 'dashboard' && (
-          <Dashboard 
-            messages={messages} 
-            onImport={() => setIsImporting(true)} 
-            onGDrive={handleGDriveSync} 
-            isSyncing={isSyncing} 
-          />
-        )}
+        <div className="flex-1 overflow-hidden flex flex-col h-full">
+            {activeView === 'dashboard' && (
+              <Dashboard 
+                messages={messages} 
+                onImport={() => setIsImporting(true)} 
+                onGDrive={handleGDriveSync} 
+                isSyncing={isSyncing} 
+              />
+            )}
 
-        {activeView === 'chats' && selectedConversationId ? (
-          <ConversationTimeline 
-            messages={filteredMessages} 
-            conversation={conversationSummaries.find(s => s.id === selectedConversationId)} 
-            allMessages={messages}
-          />
-        ) : activeView === 'chats' ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-12 animate-fade-in text-center">
-             <div className="w-20 h-20 bg-white/5 rounded-[2rem] flex items-center justify-center mb-8 border border-white/5">
-                <LayoutGrid size={32} className="text-gray-700" />
-             </div>
-             <h2 className="text-2xl font-black text-white mb-2">اختر محادثة لاستكشافها</h2>
-             <p className="text-gray-600 max-w-xs leading-relaxed">تاريخك الرقمي ينتظرك. اختر أي دردشة من القائمة اليمنى للبدء في التحليل.</p>
-          </div>
-        ) : null}
+            {activeView === 'chats' && selectedConversationId ? (
+              <ConversationTimeline 
+                messages={filteredMessages} 
+                conversation={conversationSummaries.find(s => s.id === selectedConversationId)} 
+                allMessages={messages}
+              />
+            ) : activeView === 'chats' ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center h-full">
+                 <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mb-6 border border-white/5">
+                    <LayoutGrid size={24} className="text-gray-700" />
+                 </div>
+                 <h2 className="text-xl font-bold text-white mb-2">اختر ملف ذاكرة</h2>
+                 <p className="text-gray-600 max-w-xs text-sm">استعرض تاريخك الرقمي باختيار أي سجل من القائمة اليمنى.</p>
+              </div>
+            ) : null}
 
-        {activeView === 'search' && (
-          <div className="flex-1 flex flex-col p-12 overflow-hidden animate-fade-in">
-            <header className="mb-10">
-               <h2 className="text-4xl font-black tracking-tighter">محرك البحث العميق</h2>
-               <p className="text-gray-500 mt-2">ابحث في تاريخك الرقمي عبر المصادر المختلفة.</p>
-            </header>
-            <SearchBar filters={searchFilters} setFilters={setSearchFilters} />
-            <div className="flex-1 overflow-y-auto mt-10 custom-scrollbar space-y-5">
-               {filteredMessages.length === 0 ? (
-                 <div className="text-center py-20 text-gray-600 font-bold">لا توجد نتائج مطابقة لبحثك</div>
-               ) : (
-                 filteredMessages.map(m => (
-                   <div 
-                     key={m.id} 
-                     onClick={() => { setSelectedConversationId(m.conversation_id); setActiveView('chats'); }}
-                     className="p-8 bg-[#0A0A0A] border border-white/5 rounded-[2rem] hover:border-indigo-500/40 cursor-pointer group transition-all"
-                   >
-                      <div className="flex justify-between items-center mb-5">
-                        <div className="flex items-center gap-4">
-                          <span className="w-2 h-2 rounded-full bg-indigo-500 shadow-sm shadow-indigo-500/50"></span>
-                          <span className="text-xs font-black text-indigo-400 uppercase tracking-widest">{m.sender}</span>
-                          <span className="px-2 py-0.5 bg-white/5 text-[9px] rounded-md text-gray-500 uppercase">{m.source}</span>
+            {activeView === 'search' && (
+              <div className="flex-1 flex flex-col p-8 overflow-hidden animate-fade-in h-full">
+                <header className="mb-6">
+                   <h2 className="text-2xl font-black">محرك البحث</h2>
+                </header>
+                <SearchBar filters={searchFilters} setFilters={setSearchFilters} />
+                <div className="flex-1 overflow-y-auto mt-6 custom-scrollbar space-y-4">
+                   {filteredMessages.map(m => (
+                     <div key={m.id} onClick={() => { setSelectedConversationId(m.conversation_id); setActiveView('chats'); }} className="p-5 bg-[#0A0A0A] border border-white/5 rounded-2xl hover:border-indigo-500/40 cursor-pointer transition-all">
+                        <div className="flex justify-between items-center mb-3">
+                          <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{m.sender}</span>
+                          <span className="text-[9px] text-gray-600 font-mono">{new Date(m.timestamp).toLocaleDateString()}</span>
                         </div>
-                        <span className="text-[10px] text-gray-600 font-mono">{new Date(m.timestamp).toLocaleString('ar-EG')}</span>
-                      </div>
-                      <p className="text-gray-300 leading-relaxed text-base">{m.content}</p>
-                   </div>
-                 ))
-               )}
-            </div>
-          </div>
-        )}
+                        <p className="text-gray-300 text-sm leading-relaxed">{m.content}</p>
+                     </div>
+                   ))}
+                </div>
+              </div>
+            )}
 
-        {activeView === 'analytics' && <AnalyticsDashboard messages={messages} />}
-        {activeView === 'prompts' && <PromptManager />}
-        {activeView === 'memory-ai' && <MemoryAI messages={messages} onSelectChat={(id) => { setSelectedConversationId(id); setActiveView('chats'); }} />}
+            {activeView === 'analytics' && <AnalyticsDashboard messages={messages} />}
+            {activeView === 'prompts' && <PromptManager />}
+            {activeView === 'memory-ai' && <MemoryAI messages={messages} onSelectChat={(id) => { setSelectedConversationId(id); setActiveView('chats'); }} />}
+        </div>
       </main>
 
       {isImporting && <ImportModal onClose={() => setIsImporting(false)} onImport={handleFiles} />}
-
-      {showCommandPalette && (
-        <div className="fixed inset-0 z-[200] flex items-start justify-center pt-[15vh] px-6 bg-black/80 backdrop-blur-md animate-fade-in" onClick={() => setShowCommandPalette(false)}>
-           <div className="w-full max-w-xl bg-[#121212] border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-              <div className="p-8 border-b border-white/5 flex items-center gap-4 bg-[#161616]">
-                 <Command size={24} className="text-indigo-500" />
-                 <input 
-                    autoFocus
-                    placeholder="ابحث عن أمر أو ميزة..."
-                    className="flex-1 bg-transparent text-xl font-bold focus:outline-none placeholder:text-gray-700"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Escape') setShowCommandPalette(false);
-                    }}
-                 />
-              </div>
-              <div className="p-6 space-y-2">
-                 <CommandItem icon={<Home size={18}/>} label="الرئيسية" shortcut="G + H" onClick={() => { setActiveView('dashboard'); setShowCommandPalette(false); }} />
-                 <CommandItem icon={<BrainCircuit size={18}/>} label="اسأل الذاكرة" shortcut="G + M" onClick={() => { setActiveView('memory-ai'); setShowCommandPalette(false); }} />
-                 <CommandItem icon={<SearchIcon size={18}/>} label="بحث عميق" shortcut="G + S" onClick={() => { setActiveView('search'); setShowCommandPalette(false); }} />
-                 <CommandItem icon={<PieChart size={18}/>} label="الإحصائيات" shortcut="G + A" onClick={() => { setActiveView('analytics'); setShowCommandPalette(false); }} />
-                 <CommandItem icon={<Sparkles size={18}/>} label="قوالب ذكية" shortcut="G + P" onClick={() => { setActiveView('prompts'); setShowCommandPalette(false); }} />
-                 <div className="h-px bg-white/5 my-4"></div>
-                 <CommandItem icon={<Zap size={18}/>} label="استيراد بيانات" onClick={() => { setIsImporting(true); setShowCommandPalette(false); }} color="text-yellow-500" />
-                 <CommandItem icon={<Trash2 size={18}/>} label="مسح الذاكرة" onClick={() => { if(confirm('مسح؟')){ clearAllMessages(); setMessages([]); setShowCommandPalette(false); } }} color="text-red-500" />
-              </div>
-              <div className="p-4 bg-[#0A0A0A] text-[10px] text-gray-700 font-bold uppercase tracking-widest text-center border-t border-white/5">
-                 استخدم Cmd+K لفتح هذه القائمة من أي مكان
-              </div>
-           </div>
-        </div>
-      )}
     </div>
   );
 };
@@ -317,23 +272,10 @@ const App: React.FC = () => {
 const NavButton = ({ active, onClick, icon, label, color = "text-gray-500" }: any) => (
   <button 
     onClick={onClick} 
-    className={`group relative flex items-center justify-center p-3.5 rounded-2xl transition-all ${active ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/40' : `${color} hover:bg-white/5`}`}
+    className={`group relative flex items-center justify-center p-3 rounded-xl transition-all ${active ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/40' : `${color} hover:bg-white/5`}`}
   >
     {icon}
-    <span className="absolute right-full mr-4 px-3 py-1.5 bg-black border border-white/10 text-[10px] font-bold rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 shadow-xl">{label}</span>
-  </button>
-);
-
-const CommandItem = ({ icon, label, shortcut, onClick, color = "text-gray-400" }: any) => (
-  <button 
-    onClick={onClick}
-    className="w-full flex items-center justify-between p-4 hover:bg-white/5 rounded-2xl transition-all group"
-  >
-    <div className="flex items-center gap-4">
-       <span className={`${color} group-hover:scale-110 transition-transform`}>{icon}</span>
-       <span className="font-bold text-gray-300 group-hover:text-white">{label}</span>
-    </div>
-    {shortcut && <span className="text-[9px] font-black text-gray-700 bg-white/5 px-2 py-1 rounded-md">{shortcut}</span>}
+    <span className="absolute right-full mr-3 px-2 py-1 bg-black border border-white/10 text-[9px] font-bold rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 shadow-xl">{label}</span>
   </button>
 );
 

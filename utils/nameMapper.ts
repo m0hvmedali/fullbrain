@@ -12,14 +12,6 @@ const LOCAL_NAME_DICTIONARY: Record<string, string[]> = {
   "ChatGPT": ["assistant", "gpt", "ai", "bot"]
 };
 
-const getApiKey = () => {
-  try {
-    return (globalThis as any).process?.env?.API_KEY;
-  } catch {
-    return null;
-  }
-};
-
 /**
  * Checks if two sender names likely refer to the same person using local matching and AI.
  */
@@ -36,9 +28,10 @@ export const isSamePerson = async (name1: string, name2: string): Promise<boolea
   }
 
   // 2. AI Identity Matching
-  const apiKey = getApiKey();
+  const apiKey = process.env.API_KEY;
   if (apiKey) {
     try {
+      // Must use named parameter for apiKey initialization
       const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
@@ -48,6 +41,7 @@ export const isSamePerson = async (name1: string, name2: string): Promise<boolea
           temperature: 0.1 
         }
       });
+      // Correct extraction of text response (property, not method)
       const result = JSON.parse(response.text || '{"match": false}');
       return result.match === true;
     } catch (e) {

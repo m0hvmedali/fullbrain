@@ -3,40 +3,47 @@
 <html lang="ar">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Memory Intelligence System</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://apis.google.com/js/api.js"></script>
     <script src="https://accounts.google.com/gsi/client"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+Arabic:wght@300;400;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            font-size: 14px; /* تقليل حجم الخط الأساسي */
+        }
         body {
             font-family: 'Inter', 'Noto Sans Arabic', sans-serif;
             background-color: #060606;
             color: #E0E0E0;
             margin: 0;
-            overflow: hidden;
+            padding: 0;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden; /* منع التمرير على مستوى الجسم بالكامل */
             color-scheme: dark;
+        }
+        #root {
+            height: 100%;
+            width: 100%;
         }
         .custom-scrollbar::-webkit-scrollbar {
             width: 4px;
         }
         .custom-scrollbar::-webkit-scrollbar-track {
-            background: #060606;
+            background: transparent;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb {
             background: #1a1a1a;
             border-radius: 10px;
         }
         @keyframes fade-in {
-            from { opacity: 0; transform: translateY(10px); }
+            from { opacity: 0; transform: translateY(5px); }
             to { opacity: 1; transform: translateY(0); }
         }
         .animate-fade-in {
-            animation: fade-in 0.4s ease-out forwards;
-        }
-        * {
-            touch-action: manipulation;
+            animation: fade-in 0.3s ease-out forwards;
         }
     </style>
 <script type="importmap">

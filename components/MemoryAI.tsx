@@ -199,22 +199,38 @@ const MemoryAI: React.FC<MemoryAIProps> = ({ messages, onSelectChat }) => {
               const int16 = new Int16Array(l);
               for (let i = 0; i < l; i++) int16[i] = inputData[i] * 32768;
               const pcmBlob = { data: encode(new Uint8Array(int16.buffer)), mimeType: 'audio/pcm;rate=16000' };
-              sessionPromise.then(s => s?.sendRealtimeInput({ media: pcmBlob }));
+              // Solely rely on sessionPromise resolves and call sendRealtimeInput without extra checks
+              sessionPromise.then(session => {
+                session.sendRealtimeInput({ media: pcmBlob });
+              });
             };
             source.connect(scriptProcessor);
             scriptProcessor.connect(inputCtx.destination);
           },
-          onmessage: async (msg: LiveServerMessage) => {
-            const base64Audio = msg.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
-            if (base64Audio) {
+          onmessage: async (message: LiveServerMessage) => {
+            const base64EncodedAudioString = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
+            if (base64EncodedAudioString) {
               nextStartTimeRef.current = Math.max(nextStartTimeRef.current, outputCtx.currentTime);
-              const audioBuffer = await decodeAudioData(decode(base64Audio), outputCtx, 24000, 1);
+              const audioBuffer = await decodeAudioData(decode(base64EncodedAudioString), outputCtx, 24000, 1);
               const source = outputCtx.createBufferSource();
               source.buffer = audioBuffer;
               source.connect(outputCtx.destination);
+              source.addEventListener('ended', () => {
+                sourcesRef.current.delete(source);
+              });
               source.start(nextStartTimeRef.current);
-              nextStartTimeRef.current += audioBuffer.duration;
+              nextStartTimeRef.current = nextStartTimeRef.current + audioBuffer.duration;
               sourcesRef.current.add(source);
+            }
+
+            // Handle session interruptions for a smoother experience
+            const interrupted = message.serverContent?.interrupted;
+            if (interrupted) {
+              for (const source of sourcesRef.current.values()) {
+                source.stop();
+                sourcesRef.current.delete(source);
+              }
+              nextStartTimeRef.current = 0;
             }
           },
           onclose: () => setIsVoiceActive(false),

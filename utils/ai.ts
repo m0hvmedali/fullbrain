@@ -5,7 +5,8 @@ import { GoogleGenAI, Type } from "@google/genai";
  * Standardized AI retrieval and generation utility.
  */
 export const getAI = () => {
-  const apiKey = (globalThis as any).process?.env?.API_KEY;
+  // Always use process.env.API_KEY directly for initialization
+  const apiKey = process.env.API_KEY;
   if (!apiKey) throw new Error("API_KEY_MISSING");
   return new GoogleGenAI({ apiKey });
 };
