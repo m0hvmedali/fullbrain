@@ -5,7 +5,7 @@ import {
   ShieldCheck, Copy, User, Heart, MessageCircle, Search, 
   Cpu, Hash, Info
 } from 'lucide-react';
-import { getSmartResponse, HighlightText } from '../services/memoryService';
+import { searchMemory, HighlightText } from '../services/memoryService';
 
 interface MemoryAIProps {
   onSelectChat: (id: string) => void;
@@ -17,20 +17,23 @@ const MemoryAI: React.FC<MemoryAIProps> = ({ onSelectChat }) => {
   const [isSearching, setIsSearching] = useState(false);
   const resultsEndRef = useRef<HTMLDivElement>(null);
 
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!query.trim()) return;
 
     setIsSearching(true);
+    setResults(null);
     
-    // البحث المنطقي الفوري (Pure Logic Engine)
-    // لا يوجد استدعاء لـ Gemini هنا لضمان السرعة والخصوصية
-    setTimeout(() => {
-      const localResults = getSmartResponse(query);
+    try {
+      // البحث المنطقي الهجين (Hybrid Engine)
+      const localResults = await searchMemory(query);
       setResults(localResults);
+    } catch (error) {
+      console.error("Search error:", error);
+    } finally {
       setIsSearching(false);
       resultsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, 50); // تأخير بسيط للإيحاء بالمعالجة
+    }
   };
 
   return (
@@ -62,7 +65,7 @@ const MemoryAI: React.FC<MemoryAIProps> = ({ onSelectChat }) => {
                <Search size={40} className="text-gray-700" />
             </div>
             <h3 className="text-2xl font-black text-gray-600">نظام البحث المنطقي</h3>
-            <p className="text-sm text-gray-700 mt-3 max-w-sm font-medium">ابدأ بالبحث عن أي اسم، كلمة، أو شعور. سيقوم المحرك بفحص كافة ملفات JSON المحلية فوراً.</p>
+            <p className="text-sm text-gray-700 mt-3 max-w-sm font-medium">ابدأ بالبحث عن أي اسم، كلمة، أو شعور. سيقوم المحرك بفحص كافة السجلات المحلية و قاعدة البيانات فوراً.</p>
           </div>
         )}
 
@@ -106,9 +109,10 @@ const MemoryAI: React.FC<MemoryAIProps> = ({ onSelectChat }) => {
           </div>
           <button 
             type="submit" 
-            className="absolute left-3 top-1/2 -translate-y-1/2 px-8 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-[1.5rem] font-black text-xs shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
+            disabled={isSearching}
+            className="absolute left-3 top-1/2 -translate-y-1/2 px-8 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-800 text-white rounded-[1.5rem] font-black text-xs shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
           >
-            تفعيل البحث
+            {isSearching ? 'جاري البحث...' : 'تفعيل البحث'}
           </button>
         </form>
         <div className="max-w-4xl mx-auto mt-4 flex justify-center gap-6 opacity-30">

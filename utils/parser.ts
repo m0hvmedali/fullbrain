@@ -12,6 +12,42 @@ const analyzeMetrics = (content: string) => ({
 });
 
 /**
+ * محاولة استخراج بيانات واتساب من سطر نصي
+ * يدعم تنسيق iOS: [15/02/2024, 10:14:15 PM] Name: Message
+ * ويدعم تنسيق Android: 15/02/2024, 22:14 - Name: Message
+ */
+const parseWhatsAppLine = (line: string) => {
+  // Regex pattern for common WhatsApp export formats
+  // Matches date/time, then sender, then message
+  const pattern = /^\[?(\d{1,2}\/\d{1,2}\/\d{2,4},?\s\d{1,2}:\d{1,2}(?::\d{1,2})?(?:\s[AP]M)?)\]?\s(?:-\s)?([^:]+):\s(.*)$/;
+  const match = line.match(pattern);
+
+  if (match) {
+    const rawDate = match[1].replace(',', '');
+    // محاولة تحويل التاريخ، وفي حال الفشل نستخدم الوقت الحالي
+    let timestamp = Date.parse(rawDate);
+    if (isNaN(timestamp)) {
+      // التعامل مع تنسيق التاريخ dd/mm/yyyy الذي قد يفشل فيه Date.parse في بعض البيئات
+      const parts = rawDate.split(' ');
+      const dateParts = parts[0].split('/');
+      if (dateParts.length === 3) {
+        const [d, m, y] = dateParts;
+        const normalizedDate = `${m}/${d}/${y} ${parts.slice(1).join(' ')}`;
+        timestamp = Date.parse(normalizedDate);
+      }
+    }
+
+    return {
+      timestamp: !isNaN(timestamp) ? timestamp : Date.now(),
+      sender: match[2].trim(),
+      content: match[3].trim()
+    };
+  }
+
+  return null;
+};
+
+/**
  * معالج HTML لملفات ChatGPT وغيرها
  */
 const parseHTMLContent = (html: string, fileName: string): StandardizedMessage[] => {
@@ -91,12 +127,15 @@ export const processFile = async (
   }
 
   // المعالجة التدفقية لملفات TXT/JSON الضخمة
-  const CHUNK_SIZE = 1024 * 1024 * 1; // 1MB لضمان سلاسة الواجهة
+  const CHUNK_SIZE = 1024 * 512; // 512KB لضمان استجابة الواجهة
   let offset = 0;
   let totalMessages = 0;
   let leftover = "";
   const decoder = new TextDecoder("utf-8");
   const conversationId = `file_${file.name}_${Date.now()}`;
+  
+  // تتبع الرسالة الحالية للتعامل مع الرسائل متعددة الأسطر
+  let currentMsg: StandardizedMessage | null = null;
 
   while (offset < file.size) {
     const chunk = file.slice(offset, offset + CHUNK_SIZE);
@@ -107,11 +146,37 @@ export const processFile = async (
     leftover = lines.pop() || "";
     
     if (lines.length > 0) {
-      const batchMessages: StandardizedMessage[] = lines
-        .filter(l => l.trim().length > 0)
-        .map(line => {
-          const content = line.trim();
-          return {
+      const batchToSave: StandardizedMessage[] = [];
+
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+        if (!trimmedLine) continue;
+
+        const parsed = parseWhatsAppLine(line);
+        if (parsed) {
+          // إذا كان لدينا رسالة سابقة، نقوم بإضافتها للدفعة قبل بدء رسالة جديدة
+          if (currentMsg) {
+            batchToSave.push(currentMsg);
+          }
+
+          currentMsg = {
+            id: generateId(),
+            source: 'whatsapp',
+            conversation_id: conversationId,
+            person_or_title: file.name,
+            timestamp: parsed.timestamp,
+            sender: parsed.sender,
+            direction: 'received', // القيمة الافتراضية
+            content: parsed.content,
+            meta: analyzeMetrics(parsed.content)
+          };
+        } else if (currentMsg) {
+          // إذا لم يبدأ السطر بنمط رسالة جديدة، فهو تكملة للرسالة السابقة
+          currentMsg.content += "\n" + line;
+          currentMsg.meta = analyzeMetrics(currentMsg.content);
+        } else {
+          // في حال عدم وجود رسالة حالية (بداية الملف بدون نمط واتساب)، نعتبرها رسالة بسيطة
+          batchToSave.push({
             id: generateId(),
             source: 'whatsapp',
             conversation_id: conversationId,
@@ -119,21 +184,30 @@ export const processFile = async (
             timestamp: Date.now(),
             sender: "User",
             direction: 'received',
-            content: content,
-            meta: analyzeMetrics(content)
-          };
-        });
+            content: trimmedLine,
+            meta: analyzeMetrics(trimmedLine)
+          });
+        }
+      }
 
-      await saveMessages(batchMessages);
-      totalMessages += batchMessages.length;
+      if (batchToSave.length > 0) {
+        await saveMessages(batchToSave);
+        totalMessages += batchToSave.length;
+      }
     }
 
     offset += CHUNK_SIZE;
-    if (onProgress) onProgress(Math.min(100, Math.round((offset / file.size) * 100)));
+    if (onProgress) onProgress(Math.min(99, Math.round((offset / file.size) * 100)));
     
-    // أهم سطر: Yielding للـ Main Thread لمنع الانهيار
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise(resolve => setTimeout(resolve, 5));
   }
 
+  // حفظ آخر رسالة في الملف
+  if (currentMsg) {
+    await saveMessages([currentMsg]);
+    totalMessages += 1;
+  }
+
+  if (onProgress) onProgress(100);
   return totalMessages;
 };

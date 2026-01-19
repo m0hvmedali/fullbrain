@@ -4,20 +4,20 @@ import {
   Shield, User, Heart, MessageCircle, Folder, FileText, 
   Search, Zap, Filter, ChevronDown, ChevronUp, Copy, Check, Download, Sparkles 
 } from "lucide-react";
-// Ensure relative path to the data index
 import { allData } from "../data/index";
+import { searchMessagesInDB } from "../utils/db";
 
 /**
- * محرك البحث والتحليل المحلي (Logic-Based Intelligence)
- * يقوم بالبحث في الكائنات المخزنة محلياً وتصنيفها حسب درجة الصلة
+ * محرك البحث والتحليل المحلي (Hybrid Logic-Based Intelligence)
+ * يقوم بالبحث في البيانات الثابتة وفي قاعدة البيانات المحلية IndexedDB
  */
-export const getSmartResponse = (query: string) => {
+export const searchMemory = async (query: string) => {
   const lowerQuery = (query || '').toLowerCase().trim();
   if (!lowerQuery) return [];
 
   let intelligenceDossiers: any[] = [];
 
-  // البحث المتقدم في كافة الملفات المستوردة
+  // 1. البحث في البيانات الثابتة (Static Data)
   Object.entries(allData).forEach(([fileName, dataset]) => {
     if (!Array.isArray(dataset)) return;
 
@@ -25,15 +25,8 @@ export const getSmartResponse = (query: string) => {
       let relevanceScore = 0;
       const subjectName = entry.name || entry.title || entry.sender || 'مجهول';
 
-      // وزن الحقول لزيادة دقة البحث (Relevance Weighting)
       const weights: Record<string, number> = { 
-        name: 10, 
-        title: 8, 
-        content: 7, 
-        message: 7, 
-        text: 6,
-        background: 4,
-        definition: 5
+        name: 10, title: 8, content: 7, message: 7, text: 6, background: 4, definition: 5
       };
 
       Object.entries(entry).forEach(([key, value]) => {
@@ -41,15 +34,8 @@ export const getSmartResponse = (query: string) => {
           const val = value.toLowerCase();
           if (val.includes(lowerQuery)) {
             relevanceScore += (weights[key] || 1);
-            // مكافأة للتطابق التام
             if (val === lowerQuery) relevanceScore += 10;
           }
-        } else if (Array.isArray(value)) {
-          value.forEach(item => {
-            if (typeof item === 'string' && item.toLowerCase().includes(lowerQuery)) {
-              relevanceScore += 2;
-            }
-          });
         }
       });
 
@@ -61,6 +47,17 @@ export const getSmartResponse = (query: string) => {
           relevanceScore: relevanceScore
         });
       }
+    });
+  });
+
+  // 2. البحث في قاعدة البيانات المحلية (IndexedDB)
+  const dbResults = await searchMessagesInDB(lowerQuery);
+  dbResults.forEach(msg => {
+    intelligenceDossiers.push({
+      subject: msg.sender,
+      content: msg,
+      sourceFile: `Local Repository (${msg.source})`,
+      relevanceScore: 7 // درجة ثابتة للرسائل المستوردة
     });
   });
 
