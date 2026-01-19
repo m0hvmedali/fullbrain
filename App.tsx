@@ -12,7 +12,7 @@ import { getSummaries, clearAllMessages } from './utils/db';
 import { processFile } from './utils/parser';
 import { 
   Database, MessageSquare, PieChart, BrainCircuit, Home, 
-  Menu, X, Info, Loader2, UploadCloud
+  Menu, X, Info, Loader2, UploadCloud, Search
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -26,16 +26,9 @@ const App: React.FC = () => {
   const [importProgress, setImportProgress] = useState(0);
   const [isImporting, setIsImporting] = useState(false);
 
-  /**
-   * الحل المثالي: تحميل الملخصات فقط
-   * لا يتم تحميل الرسائل الفعلية إلا عند اختيار محادثة معينة
-   */
   const loadSummaries = async () => {
     try {
-      // جلب الملخصات المحسوبة مسبقاً من IndexedDB
       const dbSummaries = await getSummaries();
-      
-      // التعامل مع البيانات الثابتة (Static Data) بنفس المنطق لتوحيد العرض
       const staticMessages = getAllUnifiedMessages();
       const staticMap = new Map<string, ConversationSummary>();
       
@@ -106,7 +99,7 @@ const App: React.FC = () => {
         <nav className="flex flex-col gap-5 flex-1">
           <NavButton active={activeView === 'dashboard'} onClick={() => setActiveView('dashboard')} icon={<Home size={18} />} label="الرئيسية" />
           <NavButton active={activeView === 'chats'} onClick={() => setIsMobileMenuOpen(true)} icon={<MessageSquare size={18} />} label="المحادثات" />
-          <NavButton active={activeView === 'memory-ai'} onClick={() => setActiveView('memory-ai')} icon={<BrainCircuit size={18} />} label="الرادار الذكي" />
+          <NavButton active={activeView === 'memory-ai'} onClick={() => setActiveView('memory-ai')} icon={<Search size={18} />} label="محرك البحث" />
           <NavButton active={activeView === 'analytics'} onClick={() => setActiveView('analytics')} icon={<PieChart size={18} />} label="الإحصائيات" />
         </nav>
       </div>
@@ -150,7 +143,7 @@ const App: React.FC = () => {
 
             <div className="md:hidden flex items-center justify-around py-3 bg-[#080808] border-t border-white/5 shrink-0">
               <BottomTab active={activeView === 'dashboard'} onClick={() => setActiveView('dashboard')} icon={<Home size={20} />} label="الرئيسية" />
-              <BottomTab active={activeView === 'memory-ai'} onClick={() => setActiveView('memory-ai')} icon={<BrainCircuit size={20} />} label="الرادار" />
+              <BottomTab active={activeView === 'memory-ai'} onClick={() => setActiveView('memory-ai')} icon={<Search size={20} />} label="البحث" />
               <BottomTab active={activeView === 'analytics'} onClick={() => setActiveView('analytics')} icon={<PieChart size={20} />} label="إحصائيات" />
               <BottomTab active={activeView === 'chats'} onClick={() => setIsMobileMenuOpen(true)} icon={<MessageSquare size={20} />} label="سجلات" />
             </div>
