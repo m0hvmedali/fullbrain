@@ -8,7 +8,11 @@ import ConversationTimeline from './components/ConversationTimeline';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import ImportModal from './components/ImportModal';
 import SearchBar from './components/SearchBar';
-import { Database, MessageSquare, PieChart, Search as SearchIcon, FileText, Trash2, Cloud, Globe, RefreshCcw, LayoutGrid, Zap, History } from 'lucide-react';
+import { 
+  Database, MessageSquare, PieChart, Search as SearchIcon, 
+  FileText, Trash2, Cloud, Globe, RefreshCcw, LayoutGrid, 
+  Zap, Settings, Calendar, ArrowRight, Activity
+} from 'lucide-react';
 
 const App: React.FC = () => {
   const [messages, setMessages] = useState<StandardizedMessage[]>([]);
@@ -20,7 +24,6 @@ const App: React.FC = () => {
     keyword: '', sender: '', source: 'all', dateFrom: '', dateTo: '', minLength: 0
   });
 
-  // التحميل الأولي من الذاكرة المحلية
   useEffect(() => {
     const loadMemory = async () => {
       const saved = await getAllMessages();
@@ -28,19 +31,6 @@ const App: React.FC = () => {
     };
     loadMemory();
   }, []);
-
-  // وظيفة محاكاة سحب الملفات من Google Drive
-  // في بيئة حقيقية، يتم استخدام gapi.client.drive.files.list
-  const syncWithGoogleDrive = async () => {
-    setIsSyncing(true);
-    try {
-      // محاكاة تأخير الشبكة
-      await new Promise(r => setTimeout(r, 2000));
-      alert("يرجى ربط API Key الخاص بـ Google Drive في الإعدادات للسحب المباشر من المجلد.");
-    } finally {
-      setIsSyncing(false);
-    }
-  };
 
   const handleFiles = async (files: FileList) => {
     let newMessages: StandardizedMessage[] = [];
@@ -72,47 +62,62 @@ const App: React.FC = () => {
   }, [messages]);
 
   const filteredMessages = useMemo(() => {
-    let results = messages;
     if (activeView === 'chats' && selectedConversationId) {
-      return results.filter(m => m.conversation_id === selectedConversationId).sort((a, b) => a.timestamp - b.timestamp);
+      return messages.filter(m => m.conversation_id === selectedConversationId).sort((a, b) => a.timestamp - b.timestamp);
     }
     if (activeView === 'search') {
-      results = results.filter(m => {
+      return messages.filter(m => {
         const matchesKeyword = m.content.toLowerCase().includes(searchFilters.keyword.toLowerCase());
         const matchesSender = m.sender.toLowerCase().includes(searchFilters.sender.toLowerCase());
         const matchesSource = searchFilters.source === 'all' || m.source === searchFilters.source;
-        const matchesLength = m.content.length >= searchFilters.minLength;
-        return matchesKeyword && matchesSender && matchesSource && matchesLength;
-      });
-      return results.sort((a, b) => b.timestamp - a.timestamp);
+        return matchesKeyword && matchesSender && matchesSource;
+      }).sort((a, b) => b.timestamp - a.timestamp);
     }
     return [];
   }, [messages, selectedConversationId, activeView, searchFilters]);
 
+  // Heatmap Data (Activity over the last 30 days)
+  const activityHeatmap = useMemo(() => {
+    const last30Days = Array.from({length: 30}, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      return d.toISOString().split('T')[0];
+    }).reverse();
+
+    const counts: Record<string, number> = {};
+    messages.forEach(m => {
+      const d = new Date(m.timestamp).toISOString().split('T')[0];
+      if (last30Days.includes(d)) {
+        counts[d] = (counts[d] || 0) + 1;
+      }
+    });
+
+    const max = Math.max(...Object.values(counts), 1);
+    return last30Days.map(date => ({
+      date,
+      intensity: (counts[date] || 0) / max
+    }));
+  }, [messages]);
+
   return (
-    <div className="flex h-screen bg-[#060606] text-[#E0E0E0] overflow-hidden" dir="rtl">
+    <div className="flex h-screen bg-[#060606] text-[#E0E0E0] overflow-hidden selection:bg-indigo-500/30" dir="rtl">
       {/* Navigation Rail */}
-      <div className="w-16 flex flex-col items-center py-8 border-l border-[#111] bg-[#090909] gap-10">
-        <div className="p-2.5 bg-indigo-600 rounded-2xl shadow-xl shadow-indigo-600/10 cursor-pointer hover:scale-105 transition-transform">
-          <Database size={22} />
+      <div className="w-18 flex flex-col items-center py-8 border-l border-white/5 bg-[#080808] z-50">
+        <div className="mb-12">
+          <div className="w-12 h-12 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-600/20">
+            <Database size={24} className="text-white" />
+          </div>
         </div>
-        <nav className="flex flex-col gap-8">
-          <button onClick={() => setActiveView('chats')} className={`p-2 transition-all ${activeView === 'chats' ? 'text-indigo-500 scale-110' : 'text-gray-600 hover:text-gray-400'}`}>
-            <MessageSquare size={22} />
-          </button>
-          <button onClick={() => setActiveView('search')} className={`p-2 transition-all ${activeView === 'search' ? 'text-indigo-500 scale-110' : 'text-gray-600 hover:text-gray-400'}`}>
-            <SearchIcon size={22} />
-          </button>
-          <button onClick={() => setActiveView('analytics')} className={`p-2 transition-all ${activeView === 'analytics' ? 'text-indigo-500 scale-110' : 'text-gray-600 hover:text-gray-400'}`}>
-            <PieChart size={22} />
-          </button>
+        
+        <nav className="flex flex-col gap-8 flex-1">
+          <NavButton active={activeView === 'chats'} onClick={() => setActiveView('chats')} icon={<MessageSquare size={22} />} label="المحادثات" />
+          <NavButton active={activeView === 'search'} onClick={() => setActiveView('search')} icon={<SearchIcon size={22} />} label="البحث" />
+          <NavButton active={activeView === 'analytics'} onClick={() => setActiveView('analytics')} icon={<PieChart size={22} />} label="الإحصائيات" />
         </nav>
-        <div className="mt-auto flex flex-col gap-8">
-          <button onClick={syncWithGoogleDrive} className={`p-2 transition-all ${isSyncing ? 'text-indigo-400 animate-spin' : 'text-gray-600 hover:text-indigo-400'}`} title="مزامنة Google Drive">
-            <RefreshCcw size={22} />
-          </button>
-          <button onClick={() => setIsImporting(true)} className="p-2 text-indigo-500 hover:scale-110 transition-transform"><FileText size={22} /></button>
-          <button onClick={() => { if(confirm('مسح كل الذاكرة؟')) { clearAllMessages(); setMessages([]); } }} className="p-2 text-red-900/50 hover:text-red-500 transition-colors"><Trash2 size={22} /></button>
+
+        <div className="flex flex-col gap-6 mt-auto">
+          <NavButton active={false} onClick={() => setIsImporting(true)} icon={<Zap size={22} />} label="استيراد" color="text-yellow-500" />
+          <NavButton active={false} onClick={() => { if(confirm('هل أنت متأكد من مسح الذاكرة؟')) { clearAllMessages(); setMessages([]); } }} icon={<Trash2 size={22} />} label="مسح" color="text-red-500" />
         </div>
       </div>
 
@@ -126,28 +131,50 @@ const App: React.FC = () => {
             allMessages={messages}
           />
         ) : activeView === 'chats' ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-12 text-center">
-             <div className="w-24 h-24 bg-indigo-500/5 rounded-[2rem] border border-indigo-500/10 flex items-center justify-center mb-8">
-                <LayoutGrid size={40} className="text-indigo-500/30" />
-             </div>
-             <h2 className="text-3xl font-black mb-4 tracking-tight">نظام استخبارات الذاكرة</h2>
-             <p className="text-gray-500 max-w-md leading-relaxed">يرجى اختيار محادثة من القائمة أو رفع ملفات جديدة (WhatsApp, Instagram, ChatGPT) للبدء في تحليل الفهرس.</p>
-             <div className="mt-10 flex gap-4">
-               <button onClick={() => setIsImporting(true)} className="px-8 py-3.5 bg-indigo-600 hover:bg-indigo-500 rounded-2xl font-bold transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-2">
-                 <Zap size={18} /> استيراد فوري
-               </button>
-               <button onClick={syncWithGoogleDrive} className="px-8 py-3.5 bg-[#111] border border-[#222] hover:bg-[#181818] rounded-2xl font-bold transition-all flex items-center gap-2">
-                 <Cloud size={18} /> Google Drive
-               </button>
+          <div className="flex-1 flex flex-col items-center justify-center p-12 animate-fade-in">
+             <div className="mb-8 p-10 bg-[#0A0A0A] border border-white/5 rounded-[3rem] text-center max-w-lg shadow-2xl">
+                <div className="w-20 h-20 bg-indigo-500/10 rounded-3xl flex items-center justify-center mx-auto mb-6 border border-indigo-500/20">
+                  <LayoutGrid size={32} className="text-indigo-500" />
+                </div>
+                <h2 className="text-3xl font-black mb-4">نظام استخبارات الذاكرة</h2>
+                <p className="text-gray-500 text-sm leading-relaxed mb-8">
+                  قم برفع ملفات WhatsApp أو Instagram أو ChatGPT لتبدأ فهرسة ذاكرتك الرقمية. جميع البيانات تُعالج محلياً 100%.
+                </p>
+                
+                {/* Real Heatmap Display */}
+                <div className="mb-10">
+                  <p className="text-[10px] text-gray-500 uppercase font-black mb-3 tracking-widest flex items-center justify-center gap-2">
+                    <Activity size={12}/> خريطة النشاط (آخر 30 يوم)
+                  </p>
+                  <div className="flex gap-1.5 justify-center">
+                    {activityHeatmap.map((day, i) => (
+                      <div 
+                        key={i} 
+                        className="w-3 h-3 rounded-sm transition-all hover:scale-125" 
+                        style={{ backgroundColor: day.intensity > 0 ? `rgba(99, 102, 241, ${0.2 + day.intensity * 0.8})` : '#1a1a1a' }}
+                        title={day.date}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <button onClick={() => setIsImporting(true)} className="flex items-center justify-center gap-3 px-6 py-4 bg-indigo-600 hover:bg-indigo-500 rounded-2xl font-bold transition-all shadow-xl shadow-indigo-600/20">
+                    <Zap size={18} /> استيراد يدوي
+                  </button>
+                  <button onClick={() => setActiveView('search')} className="flex items-center justify-center gap-3 px-6 py-4 bg-[#141414] border border-white/5 hover:bg-[#1a1a1a] rounded-2xl font-bold transition-all">
+                    <SearchIcon size={18} /> بحث عميق
+                  </button>
+                </div>
              </div>
           </div>
         ) : null}
 
         {activeView === 'search' && (
-          <div className="flex-1 flex flex-col p-10 overflow-hidden">
-            <header className="mb-10">
-               <h2 className="text-2xl font-black mb-2 flex items-center gap-3"><SearchIcon size={24} className="text-indigo-500" /> البحث الذكي</h2>
-               <p className="text-gray-500 text-sm">ابحث في الفهرس الموحد عبر الكلمات أو الأشخاص أو طول الرسالة.</p>
+          <div className="flex-1 flex flex-col p-12 overflow-hidden animate-fade-in">
+            <header className="mb-8">
+               <h2 className="text-4xl font-black tracking-tighter">محرك البحث</h2>
+               <p className="text-gray-500 mt-2">ابحث في آلاف الرسائل بلمح البصر.</p>
             </header>
             <SearchBar filters={searchFilters} setFilters={setSearchFilters} />
             <div className="flex-1 overflow-y-auto mt-10 custom-scrollbar space-y-4">
@@ -155,16 +182,18 @@ const App: React.FC = () => {
                  <div 
                    key={m.id} 
                    onClick={() => { setSelectedConversationId(m.conversation_id); setActiveView('chats'); }}
-                   className="p-5 bg-[#0D0D0D] border border-[#111] rounded-2xl hover:border-indigo-500/30 cursor-pointer group transition-all"
+                   className="p-6 bg-[#0A0A0A] border border-white/5 rounded-3xl hover:border-indigo-500/40 cursor-pointer group transition-all"
                  >
-                    <div className="flex justify-between items-center mb-3">
-                      <span className="text-[10px] font-bold text-indigo-400 opacity-60 uppercase tracking-widest">{m.sender}</span>
+                    <div className="flex justify-between items-center mb-4">
+                      <div className="flex items-center gap-3">
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                        <span className="text-xs font-black text-indigo-400 uppercase tracking-widest">{m.sender}</span>
+                      </div>
                       <span className="text-[10px] text-gray-600 font-mono">{new Date(m.timestamp).toLocaleString('ar-EG')}</span>
                     </div>
-                    <p className="text-gray-300 leading-relaxed line-clamp-2 text-sm">{m.content}</p>
+                    <p className="text-gray-300 leading-relaxed text-sm">{m.content}</p>
                  </div>
                ))}
-               {filteredMessages.length === 0 && <div className="text-center py-20 text-gray-600">لا توجد نتائج مطابقة لبحثك.</div>}
             </div>
           </div>
         )}
@@ -176,5 +205,16 @@ const App: React.FC = () => {
     </div>
   );
 };
+
+const NavButton = ({ active, onClick, icon, label, color = "text-gray-500" }: any) => (
+  <button 
+    onClick={onClick} 
+    className={`group relative flex items-center justify-center p-3 rounded-2xl transition-all ${active ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/40' : `${color} hover:bg-white/5`}`}
+    title={label}
+  >
+    {icon}
+    {!active && <span className="absolute right-full mr-4 px-3 py-1 bg-black border border-white/10 text-[10px] font-bold rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">{label}</span>}
+  </button>
+);
 
 export default App;

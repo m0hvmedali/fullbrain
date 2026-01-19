@@ -8,10 +8,12 @@ const DB_VERSION = 1;
 export const initDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event: any) => {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+        const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+        store.createIndex('timestamp', 'timestamp', { unique: false });
+        store.createIndex('conversation_id', 'conversation_id', { unique: false });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -21,10 +23,20 @@ export const initDB = (): Promise<IDBDatabase> => {
 
 export const saveMessages = async (messages: StandardizedMessage[]): Promise<void> => {
   const db = await initDB();
-  const tx = db.transaction(STORE_NAME, 'readwrite');
-  const store = tx.objectStore(STORE_NAME);
-  messages.forEach(msg => store.put(msg));
   return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    
+    let i = 0;
+    function putNext() {
+      if (i < messages.length) {
+        store.put(messages[i]);
+        i++;
+        putNext();
+      }
+    }
+    putNext();
+
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
