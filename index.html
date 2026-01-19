@@ -11,7 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+Arabic:wght@300;400;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            font-size: 14px; /* تقليل حجم الخط الأساسي */
+            font-size: 13px; /* حجم خط أصغر للنظام بالكامل */
         }
         body {
             font-family: 'Inter', 'Noto Sans Arabic', sans-serif;
@@ -21,15 +21,16 @@
             padding: 0;
             height: 100vh;
             width: 100vw;
-            overflow: hidden; /* منع التمرير على مستوى الجسم بالكامل */
+            overflow: hidden; /* منع التمرير الخارجي تماماً */
             color-scheme: dark;
         }
         #root {
             height: 100%;
             width: 100%;
+            overflow: hidden;
         }
         .custom-scrollbar::-webkit-scrollbar {
-            width: 4px;
+            width: 3px;
         }
         .custom-scrollbar::-webkit-scrollbar-track {
             background: transparent;
@@ -43,7 +44,7 @@
             to { opacity: 1; transform: translateY(0); }
         }
         .animate-fade-in {
-            animation: fade-in 0.3s ease-out forwards;
+            animation: fade-in 0.2s ease-out forwards;
         }
     </style>
 <script type="importmap">
