@@ -1,5 +1,5 @@
 
-import { StandardizedMessage, MessageSource, MessageDirection } from '../types';
+import { StandardizedMessage } from '../types';
 import { saveMessages } from './db';
 
 const generateId = () => Math.random().toString(36).substring(2, 15);
@@ -12,125 +12,95 @@ const analyzeMetrics = (content: string) => ({
 });
 
 /**
- * معالج الملفات الضخمة: يقرأ النص تدريجياً لتوفير الذاكرة
+ * معالج الملفات فائق السرعة (Ultra-Fast Stream Processor)
+ * يعتمد على قراءة الملف كقطع (Chunks) دون تحميله بالكامل في الذاكرة
  */
-export const processLargeText = async (
-  text: string, 
-  fileName: string, 
+export const processFile = async (
+  file: File, 
   onProgress?: (progress: number) => void
 ): Promise<number> => {
-  const lines = text.split('\n');
-  const totalLines = lines.length;
-  const batchSize = 1000;
-  let processedCount = 0;
+  const CHUNK_SIZE = 1024 * 1024 * 2; // 2MB لكل قطعة لضمان توازن السرعة والاستجابة
+  let offset = 0;
+  let totalMessages = 0;
+  let leftover = "";
+  const decoder = new TextDecoder("utf-8");
 
-  for (let i = 0; i < lines.length; i += batchSize) {
-    const batch = lines.slice(i, i + batchSize);
-    const batchMessages: StandardizedMessage[] = [];
+  // استخدام ترويسة ثابتة للمرسل تعتمد على اسم الملف
+  const defaultSender = file.name.split('.')[0] || "سجل";
 
-    batch.forEach((line, index) => {
-      const trimmed = line.trim();
-      if (!trimmed) return;
-      batchMessages.push({
-        id: generateId(),
-        source: 'whatsapp',
-        conversation_id: `file_${fileName}`,
-        person_or_title: fileName,
-        timestamp: Date.now() - (totalLines - (i + index)) * 1000,
-        sender: "سجل",
-        direction: 'received',
-        content: trimmed,
-        meta: analyzeMetrics(trimmed)
-      });
-    });
-
-    if (batchMessages.length > 0) {
-      await saveMessages(batchMessages);
-      processedCount += batchMessages.length;
-    }
-
-    if (onProgress) {
-      onProgress(Math.round(((i + batchSize) / totalLines) * 100));
-    }
+  while (offset < file.size) {
+    const chunk = file.slice(offset, offset + CHUNK_SIZE);
+    const buffer = await chunk.arrayBuffer();
+    const text = leftover + decoder.decode(buffer, { stream: true });
     
-    // تحرير الخيط الرئيسي (Main Thread) لضمان عدم تجميد الواجهة
-    await new Promise(resolve => setTimeout(resolve, 0));
-  }
-
-  return processedCount;
-};
-
-/**
- * قراءة الملفات الضخمة جداً (100MB+) باستخدام القطع (Chunks)
- */
-export const processFile = async (file: File, onProgress?: (p: number) => void): Promise<number> => {
-    const chunkSize = 5 * 1024 * 1024; // 5MB per chunk
-    let offset = 0;
-    let totalMessages = 0;
-    let leftover = "";
-
-    while (offset < file.size) {
-        const chunk = file.slice(offset, offset + chunkSize);
-        const text = leftover + (await chunk.text());
-        const lines = text.split('\n');
-        
-        // الاحتفاظ بالسطر الأخير غير المكتمل للمعالجة مع القطعة التالية
-        leftover = lines.pop() || "";
-        
-        const batchMessages: StandardizedMessage[] = lines
-            .filter(l => l.trim())
-            .map(line => ({
-                id: generateId(),
-                source: 'whatsapp',
-                conversation_id: `file_${file.name}`,
-                person_or_title: file.name,
-                timestamp: Date.now(),
-                sender: "سجل",
-                direction: 'received',
-                content: line.trim(),
-                meta: analyzeMetrics(line)
-            }));
-
-        if (batchMessages.length > 0) {
-            await saveMessages(batchMessages);
-            totalMessages += batchMessages.length;
-        }
-
-        offset += chunkSize;
-        if (onProgress) onProgress(Math.round((offset / file.size) * 100));
-        await new Promise(resolve => setTimeout(resolve, 0));
-    }
-
-    // معالجة السطر الأخير إذا وجد
-    if (leftover.trim()) {
-        await saveMessages([{
+    const lines = text.split(/\r?\n/);
+    // السطر الأخير قد يكون غير مكتمل، نحتفظ به للقطعة التالية
+    leftover = lines.pop() || "";
+    
+    if (lines.length > 0) {
+      const batchMessages: StandardizedMessage[] = lines
+        .filter(l => l.trim().length > 0)
+        .map(line => {
+          const content = line.trim();
+          return {
             id: generateId(),
             source: 'whatsapp',
             conversation_id: `file_${file.name}`,
             person_or_title: file.name,
             timestamp: Date.now(),
-            sender: "سجل",
+            sender: defaultSender,
             direction: 'received',
-            content: leftover.trim(),
-            meta: analyzeMetrics(leftover)
-        }]);
-        totalMessages++;
+            content: content,
+            meta: analyzeMetrics(content)
+          };
+        });
+
+      if (batchMessages.length > 0) {
+        await saveMessages(batchMessages);
+        totalMessages += batchMessages.length;
+      }
     }
 
-    return totalMessages;
+    offset += CHUNK_SIZE;
+    if (onProgress) {
+      // تحديث التقدم مع ضمان عدم تجميد الواجهة
+      onProgress(Math.min(100, Math.round((offset / file.size) * 100)));
+    }
+    
+    // إعطاء فرصة للمتصفح لتحديث الواجهة (Yielding the main thread)
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
+
+  // معالجة السطر الأخير المتبقي
+  if (leftover.trim()) {
+    const content = leftover.trim();
+    await saveMessages([{
+      id: generateId(),
+      source: 'whatsapp',
+      conversation_id: `file_${file.name}`,
+      person_or_title: file.name,
+      timestamp: Date.now(),
+      sender: defaultSender,
+      direction: 'received',
+      content: content,
+      meta: analyzeMetrics(content)
+    }]);
+    totalMessages++;
+  }
+
+  return totalMessages;
 };
 
-export const processRawData = async (data: string, fileName: string): Promise<StandardizedMessage[]> => {
-    const lines = data.split('\n').slice(0, 1000);
-    return lines.map(line => ({
-        id: generateId(),
-        source: 'whatsapp',
-        conversation_id: `raw_${fileName}`,
-        person_or_title: fileName,
-        timestamp: Date.now(),
-        sender: "بيانات",
-        direction: 'received',
-        content: line.trim(),
-        meta: analyzeMetrics(line)
-    }));
+/**
+ * دالة مساعدة لمعالجة النصوص الخام الكبيرة التي لا تأتي من ملف مباشرة
+ */
+export const processLargeText = async (
+  text: string, 
+  sourceName: string,
+  onProgress?: (p: number) => void
+): Promise<number> => {
+  // تحويل النص إلى Blob لمحاكاة الملف واستخدام محرك المعالجة المتطور
+  const blob = new Blob([text], { type: 'text/plain' });
+  const file = new File([blob], sourceName);
+  return processFile(file, onProgress);
 };

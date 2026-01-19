@@ -1,10 +1,9 @@
 
 /**
  * هذا الملف هو المصدر الوحيد للبيانات في النظام.
- * سيقوم باستيراد ملفات JSON الموجودة في نفس المجلد.
+ * سيقوم باستيراد ملفات JSON الموجودة في نفس المجلد باستخدام مسارات نسبية صحيحة.
  */
 
-// ملاحظة: قمت بإنشاء تصديرات افتراضية لتجنب أخطاء البناء إذا كانت الملفات فارغة حالياً
 import characters from "./characters.json";
 import messages from "./messages.json";
 import emotions_details from "./emotions_details.json";
@@ -23,17 +22,17 @@ export const allData: Record<string, any[]> = {
   rahoma
 };
 
-// تجميع كافة الرسائل في مصفوفة واحدة للبحث العام
 export const getAllUnifiedMessages = () => {
   const unified: any[] = [];
   Object.entries(allData).forEach(([fileName, dataset]) => {
     if (Array.isArray(dataset)) {
       dataset.forEach(entry => {
-        if (entry.sender && (entry.text || entry.message)) {
+        const content = entry.text || entry.message || entry.content;
+        if (entry.sender && content) {
           unified.push({
             ...entry,
             sourceFile: fileName,
-            id: Math.random().toString(36).substring(2, 9)
+            id: entry.id || Math.random().toString(36).substring(2, 9)
           });
         }
       });

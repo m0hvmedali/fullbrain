@@ -1,15 +1,16 @@
 
 import React, { useState, useMemo } from 'react';
 import { ConversationSummary } from '../types';
-import { Instagram, MessageCircle, MessageSquare, Clock, Hash, Search, Filter } from 'lucide-react';
+import { Instagram, MessageCircle, MessageSquare, Hash, Search } from 'lucide-react';
 
 interface SidebarProps {
   summaries: ConversationSummary[];
   activeId: string | null;
   onSelect: (id: string) => void;
+  isMobile?: boolean;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ summaries, activeId, onSelect }) => {
+const Sidebar: React.FC<SidebarProps> = ({ summaries, activeId, onSelect, isMobile }) => {
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredSummaries = useMemo(() => {
@@ -27,6 +28,40 @@ const Sidebar: React.FC<SidebarProps> = ({ summaries, activeId, onSelect }) => {
       default: return <Hash size={12} className="text-gray-500" />;
     }
   };
+
+  if (isMobile) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="relative mb-4 px-2">
+          <Search className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-600" size={14} />
+          <input 
+            type="text"
+            placeholder="بحث..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-[#060606] border border-[#1A1A1A] rounded-xl py-3 pr-10 pl-3 text-xs focus:outline-none focus:border-indigo-500/50"
+          />
+        </div>
+        <div className="space-y-1">
+          {filteredSummaries.map(summary => (
+            <div 
+              key={summary.id}
+              onClick={() => onSelect(summary.id)}
+              className={`p-4 cursor-pointer rounded-xl transition-all border ${activeId === summary.id ? 'bg-indigo-600/10 border-indigo-500/20' : 'bg-[#0D0D0D] border-white/5'}`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-1.5">{getSourceIcon(summary.source)}</div>
+                <span className="text-[8px] text-gray-700">{new Date(summary.lastMessageTimestamp).toLocaleDateString()}</span>
+              </div>
+              <h3 className={`font-bold truncate text-[12px] ${activeId === summary.id ? 'text-indigo-400' : 'text-gray-300'}`}>
+                {summary.title}
+              </h3>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <aside className="w-64 border-l border-[#1A1A1A] bg-[#0B0B0B] flex flex-col h-full shrink-0 z-20" dir="rtl">
