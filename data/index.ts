@@ -1,7 +1,7 @@
 
 /**
  * هذا الملف هو المصدر الوحيد للبيانات في النظام.
- * سيقوم باستيراد ملفات JSON الموجودة في نفس المجلد باستخدام مسارات نسبية صحيحة.
+ * تم التأكد من استخدام مسارات نسبية تبدأ بـ ./ لحل مشاكل التوجيه في المتصفح.
  */
 
 import characters from "./characters.json";
@@ -32,7 +32,10 @@ export const getAllUnifiedMessages = () => {
           unified.push({
             ...entry,
             sourceFile: fileName,
-            id: entry.id || Math.random().toString(36).substring(2, 9)
+            id: entry.id || Math.random().toString(36).substring(2, 9),
+            timestamp: entry.timestamp || Date.now(),
+            source: entry.source || 'whatsapp',
+            conversation_id: entry.conversation_id || `static_${fileName}`
           });
         }
       });
