@@ -3,148 +3,130 @@ import { StandardizedMessage, MessageSource, MessageDirection } from '../types';
 
 const generateId = () => Math.random().toString(36).substring(2, 15);
 
-const analyzeMeta = (content: string) => ({
+// وظيفة فك تشفير نصوص Instagram العربية (UTF-8 encoded as ISO-8859-1)
+const decodeInstagramText = (text: string): string => {
+  try {
+    return decodeURIComponent(escape(text));
+  } catch (e) {
+    return text;
+  }
+};
+
+const analyzeMetrics = (content: string) => ({
   message_length: content.length,
   word_count: content.split(/\s+/).filter(w => w.length > 0).length,
-  has_question: content.includes('?'),
+  has_question: content.includes('?') || content.includes('؟'),
   has_exclamation: content.includes('!'),
 });
 
-// Detect Source
-export const detectSource = async (file: File): Promise<MessageSource | null> => {
-  const text = await file.slice(0, 1000).text();
-  
-  // WhatsApp: Usually starts with a date pattern like [22/05/2023, 14:30:15] or 22/05/23, 14:30 - 
-  const waRegex = /^(\[?\d{1,2}[\/\.]\d{1,2}[\/\.]\d{2,4})|(\d{1,2}[\/\.]\d{1,2}[\/\.]\d{2,4},\s\d{1,2}:\d{2})/;
-  if (waRegex.test(text)) return 'whatsapp';
-
-  try {
-    const json = JSON.parse(text);
-    // ChatGPT: Array of conversation objects with "title" and "mapping"
-    if (Array.isArray(json) && json[0]?.mapping && json[0]?.title) return 'chatgpt';
-    // Instagram: Object with "messages" array and "participants"
-    if (json.messages && Array.isArray(json.messages)) return 'instagram';
-  } catch (e) {
-    // If partial JSON failed, it might still be a JSON file but larger
-    if (file.name.endsWith('.json')) {
-        // We'll perform a more thorough check in the actual parser
-    }
-  }
-
-  if (file.name.includes('message_') && file.name.endsWith('.json')) return 'instagram';
-  if (file.name === 'conversations.json') return 'chatgpt';
-
-  return null;
-};
-
-// WhatsApp Parser
-export const parseWhatsApp = async (file: File): Promise<StandardizedMessage[]> => {
-  const text = await file.text();
-  const lines = text.split('\n');
+export const parseWhatsApp = (text: string, fileName: string): StandardizedMessage[] => {
   const messages: StandardizedMessage[] = [];
-  
-  // Standard formats: 
-  // [15/01/2023, 21:05:32] Sender Name: Message
-  // 15/01/2023, 21:05 - Sender Name: Message
-  const regex = /^\[?(\d{1,2}[\/\.]\d{1,2}[\/\.]\d{2,4}),?\s(\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AaPp][Mm])?)\]?\s-?\s?([^:]+):\s(.*)$/;
-  
+  const lines = text.split('\n');
+  const msgRegex = /^(\d{1,2}\/\d{1,2}\/\d{2,4}),\s(\d{1,2}:\d{2}\s?[AP]M)\s-\s([^:]+):\s(.*)$/i;
   let currentMsg: StandardizedMessage | null = null;
 
-  for (const line of lines) {
-    const match = line.match(regex);
+  lines.forEach(line => {
+    const match = line.match(msgRegex);
     if (match) {
-      const [_, dateStr, timeStr, sender, content] = match;
-      if (content.includes('<Media omitted>')) continue;
-
-      // Basic Date Parsing (Note: can be complex due to locale)
-      const parts = dateStr.split(/[\/\.]/);
-      let d = new Date();
-      if (parts.length === 3) {
-          const day = parseInt(parts[0]);
-          const month = parseInt(parts[1]) - 1;
-          const year = parts[2].length === 2 ? 2000 + parseInt(parts[2]) : parseInt(parts[2]);
-          d = new Date(year, month, day);
-      }
-      
-      const id = generateId();
+      const [_, date, time, sender, content] = match;
+      if (content.includes('<Media omitted>') || content.includes('encrypted')) return;
       currentMsg = {
-        id,
+        id: generateId(),
         source: 'whatsapp',
-        conversation_id: file.name,
-        person_or_title: sender,
-        timestamp: d.getTime(), // simplistic, full time parsing skipped for brevity
-        sender,
-        direction: 'received', // Placeholder, logic needed to detect "me"
+        conversation_id: `wa_${fileName}`,
+        person_or_title: sender.trim(),
+        timestamp: new Date(`${date} ${time}`).getTime() || Date.now(),
+        sender: sender.trim(),
+        direction: 'received',
         content: content.trim(),
-        meta: analyzeMeta(content),
+        meta: analyzeMetrics(content)
       };
       messages.push(currentMsg);
     } else if (currentMsg && line.trim()) {
-      // Append to previous message (multiline)
       currentMsg.content += '\n' + line.trim();
-      currentMsg.meta = analyzeMeta(currentMsg.content);
+      currentMsg.meta = analyzeMetrics(currentMsg.content);
     }
+  });
+  return messages;
+};
+
+export const parseInstagram = (json: any, fileName: string): StandardizedMessage[] => {
+  const messages: StandardizedMessage[] = [];
+  const threadId = json.thread_path || fileName;
+  const participants = json.participants?.map((p: any) => decodeInstagramText(p.name)) || [];
+  
+  if (json.messages) {
+    json.messages.forEach((m: any) => {
+      if (!m.content) return;
+      const cleanContent = decodeInstagramText(m.content);
+      const senderName = decodeInstagramText(m.sender_name);
+      
+      messages.push({
+        id: generateId(),
+        source: 'instagram',
+        conversation_id: `ig_${threadId}`,
+        person_or_title: participants.find((p: string) => p !== senderName) || 'Instagram Chat',
+        timestamp: m.timestamp_ms,
+        sender: senderName,
+        direction: 'received',
+        content: cleanContent,
+        meta: analyzeMetrics(cleanContent)
+      });
+    });
   }
   return messages;
 };
 
-// Instagram Parser
-export const parseInstagram = async (file: File): Promise<StandardizedMessage[]> => {
-  const text = await file.text();
-  const data = JSON.parse(text);
+export const parseChatGPT = (html: string, fileName: string): StandardizedMessage[] => {
   const messages: StandardizedMessage[] = [];
-  const conversation_id = data.thread_path || file.name;
-
-  if (data.messages && Array.isArray(data.messages)) {
-    data.messages.forEach((m: any) => {
-      if (!m.content) return;
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  
+  // محاولة العثور على هيكل المحادثة في ملفات HTML المصدرة
+  const messageElements = doc.querySelectorAll('.message, [class*="message"]');
+  
+  messageElements.forEach((el, idx) => {
+    const role = el.textContent?.toLowerCase().includes('user') ? 'user' : 'assistant';
+    const content = el.querySelector('.content, [class*="content"]')?.textContent || el.textContent || '';
+    
+    if (content.trim()) {
       messages.push({
         id: generateId(),
-        source: 'instagram',
-        conversation_id,
-        person_or_title: data.participants?.[0]?.name || 'Instagram Chat',
-        timestamp: m.timestamp_ms,
-        sender: m.sender_name,
-        direction: 'received',
-        content: m.content,
-        meta: analyzeMeta(m.content),
+        source: 'chatgpt',
+        conversation_id: `gpt_${fileName}`,
+        person_or_title: fileName.replace('.html', ''),
+        timestamp: Date.now() - (messageElements.length - idx) * 1000,
+        sender: role === 'user' ? 'User' : 'ChatGPT',
+        direction: role === 'user' ? 'sent' : 'received',
+        content: content.trim(),
+        meta: analyzeMetrics(content)
       });
-    });
-  }
-  return messages.sort((a, b) => a.timestamp - b.timestamp);
+    }
+  });
+  
+  return messages;
 };
 
-// ChatGPT Parser
-export const parseChatGPT = async (file: File): Promise<StandardizedMessage[]> => {
-  const text = await file.text();
-  const data = JSON.parse(text);
-  const messages: StandardizedMessage[] = [];
-
-  if (Array.isArray(data)) {
-    data.forEach((conv: any) => {
-      const convId = conv.id || generateId();
-      const title = conv.title || 'Untitled Chat';
-      
-      Object.values(conv.mapping || {}).forEach((node: any) => {
-        const msg = node.message;
-        if (msg && msg.content && msg.content.parts) {
-          const content = msg.content.parts.join('\n').trim();
-          if (!content) return;
-
-          messages.push({
-            id: msg.id || generateId(),
-            source: 'chatgpt',
-            conversation_id: convId,
-            person_or_title: title,
-            timestamp: msg.create_time * 1000,
-            sender: msg.author.role,
-            direction: msg.author.role === 'user' ? 'sent' : 'received',
-            content,
-            meta: analyzeMeta(content),
-          });
-        }
-      });
-    });
+export const processRawData = async (data: string, fileName: string): Promise<StandardizedMessage[]> => {
+  const name = fileName.toLowerCase();
+  try {
+    if (name.endsWith('.json')) {
+      const json = JSON.parse(data);
+      return parseInstagram(json, fileName);
+    }
+    if (name.endsWith('.html') || name.endsWith('.htm')) {
+      return parseChatGPT(data, fileName);
+    }
+    if (name.endsWith('.txt')) {
+      return parseWhatsApp(data, fileName);
+    }
+  } catch (e) {
+    console.error("Error parsing file:", fileName, e);
   }
-  return messages.sort((a, b) => a.timestamp - b.timestamp);
+  return [];
+};
+
+export const processFile = async (file: File): Promise<StandardizedMessage[]> => {
+  const text = await file.text();
+  return processRawData(text, file.name);
 };

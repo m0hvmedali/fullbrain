@@ -1,6 +1,6 @@
 
 import React, { useRef, useState } from 'react';
-import { X, Upload, FileText, CheckCircle2 } from 'lucide-react';
+import { X, Upload, Folder, FileText, CheckCircle2, ShieldCheck } from 'lucide-react';
 
 interface ImportModalProps {
   onClose: () => void;
@@ -9,110 +9,71 @@ interface ImportModalProps {
 
 const ImportModal: React.FC<ImportModalProps> = ({ onClose, onImport }) => {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [dragActive, setDragActive] = useState(false);
+  const folderRef = useRef<HTMLInputElement>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") setDragActive(true);
-    else if (e.type === "dragleave") setDragActive(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setSelectedFiles(Array.from(e.dataTransfer.files));
-    }
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    e.preventDefault();
-    if (e.target.files && e.target.files[0]) {
-      setSelectedFiles(Array.from(e.target.files));
-    }
+  const handleFiles = (files: FileList | null) => {
+    if (files) setSelectedFiles(Array.from(files));
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm">
-      <div className="w-full max-w-2xl bg-[#121212] border border-[#1A1A1A] rounded-3xl overflow-hidden shadow-2xl relative">
-        <button 
-          onClick={onClose}
-          className="absolute top-6 right-6 text-gray-500 hover:text-white transition-colors"
-        >
-          <X size={24} />
-        </button>
-
-        <div className="p-10 space-y-8">
-          <div className="space-y-2">
-            <h2 className="text-3xl font-bold">Import Data</h2>
-            <p className="text-gray-500">Upload your WhatsApp (.txt), Instagram (.json), or ChatGPT (.json) exports.</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/90 backdrop-blur-md" dir="rtl">
+      <div className="w-full max-w-3xl bg-[#0F0F0F] border border-[#1A1A1A] rounded-[2.5rem] overflow-hidden shadow-2xl">
+        <div className="flex justify-between items-center p-8 border-b border-[#1A1A1A]">
+          <div className="flex items-center gap-3">
+             <div className="p-2 bg-indigo-600/20 text-indigo-500 rounded-xl"><Upload size={20} /></div>
+             <h2 className="text-2xl font-bold">استيراد الذاكرة</h2>
           </div>
+          <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors"><X size={24} /></button>
+        </div>
 
-          <div 
-            onDragEnter={handleDrag}
-            onDragLeave={handleDrag}
-            onDragOver={handleDrag}
-            onDrop={handleDrop}
-            onClick={() => inputRef.current?.click()}
-            className={`border-2 border-dashed rounded-3xl p-16 flex flex-col items-center justify-center text-center cursor-pointer transition-all ${dragActive ? 'border-indigo-500 bg-indigo-500/10' : 'border-[#222] hover:border-indigo-500/50 bg-[#0D0D0D]'}`}
-          >
-            <input 
-              ref={inputRef}
-              type="file" 
-              multiple 
-              className="hidden" 
-              onChange={handleChange}
-              accept=".txt,.json"
-            />
-            <div className="w-16 h-16 bg-indigo-500/10 text-indigo-500 rounded-full flex items-center justify-center mb-4">
-              <Upload size={32} />
-            </div>
-            <p className="text-lg font-medium">Click to upload or drag & drop</p>
-            <p className="text-sm text-gray-500 mt-2">Maximum file size: 50MB</p>
-          </div>
-
-          {selectedFiles.length > 0 && (
-            <div className="space-y-4">
-              <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest">Files Ready ({selectedFiles.length})</h3>
-              <div className="max-h-40 overflow-y-auto space-y-2">
-                {selectedFiles.map((f, i) => (
-                  <div key={i} className="flex items-center gap-3 p-3 bg-[#1A1A1A] rounded-xl border border-[#222]">
-                    <FileText size={18} className="text-gray-500" />
-                    <span className="flex-1 text-sm truncate font-mono">{f.name}</span>
-                    <CheckCircle2 size={18} className="text-indigo-500" />
-                  </div>
-                ))}
+        <div className="p-10 grid grid-cols-1 md:grid-cols-2 gap-8">
+           <div className="space-y-6">
+              <div className="p-6 bg-[#141414] border border-[#1A1A1A] rounded-3xl hover:border-indigo-500/50 transition-all cursor-pointer group" onClick={() => inputRef.current?.click()}>
+                 <input ref={inputRef} type="file" multiple className="hidden" onChange={(e) => handleFiles(e.target.files)} />
+                 <FileText className="text-indigo-500 mb-4 group-hover:scale-110 transition-transform" size={32} />
+                 <h4 className="font-bold text-lg">اختيار ملفات</h4>
+                 <p className="text-xs text-gray-500 mt-1">اختر ملفات TXT أو JSON بشكل فردي</p>
               </div>
-              <button 
-                onClick={() => {
-                   const dt = new DataTransfer();
-                   selectedFiles.forEach(f => dt.items.add(f));
-                   onImport(dt.files);
-                }}
-                className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 rounded-2xl font-bold text-lg transition-all shadow-lg shadow-indigo-600/20"
-              >
-                Process {selectedFiles.length} Files
-              </button>
-            </div>
-          )}
 
-          <div className="pt-6 border-t border-[#1A1A1A] grid grid-cols-3 gap-6 opacity-60">
-             <div className="text-center">
-                <p className="text-xs font-bold text-green-500 uppercase mb-1">WhatsApp</p>
-                <p className="text-[10px] text-gray-500">Auto-detects UTF-8 .txt exports</p>
-             </div>
-             <div className="text-center border-x border-[#1A1A1A]">
-                <p className="text-xs font-bold text-pink-500 uppercase mb-1">Instagram</p>
-                <p className="text-[10px] text-gray-500">Supports message_*.json format</p>
-             </div>
-             <div className="text-center">
-                <p className="text-xs font-bold text-teal-500 uppercase mb-1">ChatGPT</p>
-                <p className="text-[10px] text-gray-500">Import conversations.json dump</p>
-             </div>
-          </div>
+              <div className="p-6 bg-[#141414] border border-[#1A1A1A] rounded-3xl hover:border-indigo-500/50 transition-all cursor-pointer group" onClick={() => folderRef.current?.click()}>
+                 {/* @ts-ignore */}
+                 <input ref={folderRef} type="file" webkitdirectory="" directory="" multiple className="hidden" onChange={(e) => handleFiles(e.target.files)} />
+                 <Folder className="text-purple-500 mb-4 group-hover:scale-110 transition-transform" size={32} />
+                 <h4 className="font-bold text-lg">استيراد مجلد كامل</h4>
+                 <p className="text-xs text-gray-500 mt-1">سيتم مسح كل ما بداخل المجلد تلقائياً</p>
+              </div>
+           </div>
+
+           <div className="bg-[#0A0A0A] border border-[#1A1A1A] rounded-3xl p-6 flex flex-col">
+              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">الملفات المختارة ({selectedFiles.length})</h4>
+              <div className="flex-1 overflow-y-auto space-y-2 mb-6 max-h-48 custom-scrollbar">
+                 {selectedFiles.map((f, i) => (
+                    <div key={i} className="flex items-center justify-between p-2 bg-[#121212] rounded-lg text-[10px] font-mono border border-[#1A1A1A]">
+                       <span className="truncate w-40 text-left" dir="ltr">{f.name}</span>
+                       <CheckCircle2 size={12} className="text-indigo-500" />
+                    </div>
+                 ))}
+                 {selectedFiles.length === 0 && <p className="text-gray-600 text-center text-xs mt-10">لا توجد ملفات جاهزة</p>}
+              </div>
+              
+              <button 
+                disabled={selectedFiles.length === 0}
+                onClick={() => {
+                  const dt = new DataTransfer();
+                  selectedFiles.forEach(f => dt.items.add(f));
+                  onImport(dt.files);
+                }}
+                className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-800 disabled:text-gray-600 rounded-2xl font-bold transition-all shadow-xl shadow-indigo-600/10"
+              >
+                بدء معالجة الذاكرة
+              </button>
+           </div>
+        </div>
+
+        <div className="px-10 pb-10 flex items-center gap-2 text-[10px] text-gray-600">
+           <ShieldCheck size={14} className="text-green-600" />
+           <span>نظام آمن: تتم معالجة كافة البيانات محلياً داخل المتصفح ولا يتم إرسال أي شيء للسحابة.</span>
         </div>
       </div>
     </div>
