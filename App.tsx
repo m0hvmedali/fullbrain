@@ -1,9 +1,9 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { StandardizedMessage, ConversationSummary, SearchFilters, PromptTemplate } from './types';
+import { StandardizedMessage, ConversationSummary, SearchFilters } from './types';
 import { processFile, processRawData } from './utils/parser';
-import { getAllMessages, saveMessages, clearAllMessages, getPromptTemplates } from './utils/db';
-import { initGoogleDrive, openPicker, fetchFolderFiles } from './utils/googleDrive';
+import { getAllMessages, saveMessages, clearAllMessages } from './utils/db';
+import { initGoogleDrive, openPicker, fetchFolderFiles, fetchFileContent } from './utils/googleDrive';
 import Sidebar from './components/Sidebar';
 import ConversationTimeline from './components/ConversationTimeline';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
@@ -60,7 +60,7 @@ const App: React.FC = () => {
       return;
     }
     setIsSyncing(true);
-    setSyncStatus({ type: 'idle', message: 'جاري معالجة الملفات المرفوعة...' });
+    setSyncStatus({ type: 'idle', message: 'جاري معالجة الملفات...' });
     try {
       const fileArray = Array.from(files);
       const parsedResults = await Promise.all(
@@ -76,13 +76,12 @@ const App: React.FC = () => {
       const newMessages = parsedResults.flat();
       if (newMessages.length > 0) {
         await updateMessageState(newMessages);
-        setSyncStatus({ type: 'success', message: `تم استيراد ${newMessages.length} رسالة بنجاح.` });
+        setSyncStatus({ type: 'success', message: `تم بنجاح! استيراد ${newMessages.length} رسالة.` });
       } else {
-        setSyncStatus({ type: 'error', message: 'لم يتم العثور على بيانات صالحة في الملفات المختارة.' });
+        setSyncStatus({ type: 'error', message: 'الملفات لا تحتوي على بيانات متوافقة.' });
       }
     } catch (error) {
-      console.error("Batch processing error:", error);
-      setSyncStatus({ type: 'error', message: 'حدث خطأ أثناء معالجة الملفات.' });
+      setSyncStatus({ type: 'error', message: 'حدث خطأ أثناء الرفع.' });
     } finally {
       setIsSyncing(false);
       setIsImporting(false);
@@ -102,27 +101,34 @@ const App: React.FC = () => {
     setIsSyncing(true);
     setSyncStatus({ type: 'idle', message: 'جاري الاتصال بـ Google Drive...' });
     try {
-      const folderId = await openPicker();
-      if (!folderId) {
+      const selection = await openPicker();
+      if (!selection) {
         setIsSyncing(false);
         return;
       }
-      setSyncStatus({ type: 'idle', message: 'جاري جلب الملفات من المجلد المختار...' });
-      const driveFiles = await fetchFolderFiles(folderId);
+
+      setSyncStatus({ type: 'idle', message: `جاري جلب ${selection.name}...` });
+      
       let allParsed: StandardizedMessage[] = [];
-      for (const file of driveFiles) {
-        const parsed = await processRawData(file.content, file.name);
-        allParsed = [...allParsed, ...parsed];
+      if (selection.isFolder) {
+        const driveFiles = await fetchFolderFiles(selection.id);
+        for (const file of driveFiles) {
+          const parsed = await processRawData(file.content, file.name);
+          allParsed = [...allParsed, ...parsed];
+        }
+      } else {
+        const content = await fetchFileContent(selection.id);
+        allParsed = await processRawData(content, selection.name);
       }
+
       if (allParsed.length > 0) {
         await updateMessageState(allParsed);
-        setSyncStatus({ type: 'success', message: `تمت المزامنة بنجاح! تم استيراد ${allParsed.length} رسالة.` });
+        setSyncStatus({ type: 'success', message: `تم المزامنة! (${allParsed.length} رسالة)` });
       } else {
-        setSyncStatus({ type: 'error', message: 'لم يتم العثور على ملفات مدعومة في هذا المجلد.' });
+        setSyncStatus({ type: 'error', message: 'لم يتم العثور على بيانات صالحة في الاختيار.' });
       }
     } catch (error: any) {
-      console.error("GDrive Sync Error:", error);
-      setSyncStatus({ type: 'error', message: `فشلت المزامنة: ${error.message || 'خطأ غير معروف'}` });
+      setSyncStatus({ type: 'error', message: `خطأ: ${error.message || 'فشلت المزامنة'}` });
     } finally {
       setIsSyncing(false);
       setTimeout(() => setSyncStatus({ type: 'idle', message: '' }), 5000);
@@ -274,7 +280,6 @@ const App: React.FC = () => {
 
       {isImporting && <ImportModal onClose={() => setIsImporting(false)} onImport={handleFiles} />}
 
-      {/* Command Palette Overlay */}
       {showCommandPalette && (
         <div className="fixed inset-0 z-[200] flex items-start justify-center pt-[15vh] px-6 bg-black/80 backdrop-blur-md animate-fade-in" onClick={() => setShowCommandPalette(false)}>
            <div className="w-full max-w-xl bg-[#121212] border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>

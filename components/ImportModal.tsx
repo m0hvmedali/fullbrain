@@ -10,10 +10,14 @@ interface ImportModalProps {
 const ImportModal: React.FC<ImportModalProps> = ({ onClose, onImport }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [selectedFileList, setSelectedFileList] = useState<FileList | null>(null);
+  const [fileNames, setFileNames] = useState<string[]>([]);
 
   const handleFiles = (files: FileList | null) => {
-    if (files) setSelectedFiles(Array.from(files));
+    if (files) {
+      setSelectedFileList(files);
+      setFileNames(Array.from(files).map(f => f.name));
+    }
   };
 
   return (
@@ -41,28 +45,26 @@ const ImportModal: React.FC<ImportModalProps> = ({ onClose, onImport }) => {
                  <input ref={folderRef} type="file" webkitdirectory="" directory="" multiple className="hidden" onChange={(e) => handleFiles(e.target.files)} />
                  <Folder className="text-purple-500 mb-4 group-hover:scale-110 transition-transform" size={32} />
                  <h4 className="font-bold text-lg">استيراد مجلد كامل</h4>
-                 <p className="text-xs text-gray-500 mt-1">سيتم مسح كل ما بداخل المجلد تلقائياً</p>
+                 <p className="text-xs text-gray-500 mt-1">سيتم جلب كافة الملفات النصية داخل المجلد</p>
               </div>
            </div>
 
            <div className="bg-[#0A0A0A] border border-[#1A1A1A] rounded-3xl p-6 flex flex-col">
-              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">الملفات المختارة ({selectedFiles.length})</h4>
+              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">الملفات المختارة ({fileNames.length})</h4>
               <div className="flex-1 overflow-y-auto space-y-2 mb-6 max-h-48 custom-scrollbar">
-                 {selectedFiles.map((f, i) => (
+                 {fileNames.map((name, i) => (
                     <div key={i} className="flex items-center justify-between p-2 bg-[#121212] rounded-lg text-[10px] font-mono border border-[#1A1A1A]">
-                       <span className="truncate w-40 text-left" dir="ltr">{f.name}</span>
+                       <span className="truncate w-40 text-left" dir="ltr">{name}</span>
                        <CheckCircle2 size={12} className="text-indigo-500" />
                     </div>
                  ))}
-                 {selectedFiles.length === 0 && <p className="text-gray-600 text-center text-xs mt-10">لا توجد ملفات جاهزة</p>}
+                 {fileNames.length === 0 && <p className="text-gray-600 text-center text-xs mt-10">لا توجد ملفات جاهزة</p>}
               </div>
               
               <button 
-                disabled={selectedFiles.length === 0}
+                disabled={fileNames.length === 0}
                 onClick={() => {
-                  const dt = new DataTransfer();
-                  selectedFiles.forEach(f => dt.items.add(f));
-                  onImport(dt.files);
+                  if (selectedFileList) onImport(selectedFileList);
                 }}
                 className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-800 disabled:text-gray-600 rounded-2xl font-bold transition-all shadow-xl shadow-indigo-600/10"
               >
@@ -73,7 +75,7 @@ const ImportModal: React.FC<ImportModalProps> = ({ onClose, onImport }) => {
 
         <div className="px-10 pb-10 flex items-center gap-2 text-[10px] text-gray-600">
            <ShieldCheck size={14} className="text-green-600" />
-           <span>نظام آمن: تتم معالجة كافة البيانات محلياً داخل المتصفح ولا يتم إرسال أي شيء للسحابة.</span>
+           <span>نظام آمن: تتم معالجة البيانات محلياً.</span>
         </div>
       </div>
     </div>
