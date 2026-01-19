@@ -1,0 +1,5 @@
+{
+  "name": "Memory Intelligence System",
+  "description": "A high-performance personal conversation management and analysis platform. It imports and standardizes chat logs from WhatsApp, Instagram, and ChatGPT using logic-driven parsing for data-centric insights.",
+  "requestFramePermissions": []
+}
