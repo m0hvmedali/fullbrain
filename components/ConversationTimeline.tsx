@@ -1,8 +1,8 @@
 
-import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { StandardizedMessage, ConversationSummary, PromptTemplate } from '../types';
-import { Calendar, Copy, Check, Sparkles, X, Loader2, BookOpen, User, Bot, Clock, MessageSquare, ChevronDown } from 'lucide-react';
-import { getPromptTemplates, getMessagesByConversation } from '../utils/db';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import { StandardizedMessage, ConversationSummary } from '../types';
+import { Loader2, BookOpen, User, Bot, MessageSquare, ChevronDown, ArrowDown } from 'lucide-react';
+import { getMessagesByConversation } from '../utils/db';
 import { summarizeConversation } from '../utils/ai';
 
 interface TimelineProps {
@@ -12,13 +12,8 @@ interface TimelineProps {
 
 const ConversationTimeline: React.FC<TimelineProps> = ({ conversationId, conversation }) => {
   const [allMessages, setAllMessages] = useState<StandardizedMessage[]>([]);
-  const [displayMessages, setDisplayMessages] = useState<StandardizedMessage[]>([]);
+  const [visibleCount, setVisibleCount] = useState(100);
   const [isLoading, setIsLoading] = useState(false);
-  const [page, setPage] = useState(1);
-  const PAGE_SIZE = 50;
-  
-  const [showPromptPicker, setShowPromptPicker] = useState(false);
-  const [templates, setTemplates] = useState<PromptTemplate[]>([]);
   const [summary, setSummary] = useState<string | null>(null);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -27,25 +22,37 @@ const ConversationTimeline: React.FC<TimelineProps> = ({ conversationId, convers
     if (conversationId) {
       setIsLoading(true);
       setAllMessages([]);
-      setDisplayMessages([]);
+      setVisibleCount(100);
       setSummary(null);
-      setPage(1);
       
       getMessagesByConversation(conversationId).then(msgs => {
         setAllMessages(msgs);
-        setDisplayMessages(msgs.slice(0, PAGE_SIZE));
         setIsLoading(false);
-        containerRef.current?.scrollTo(0, 0);
+        // التمرير للأسفل تلقائياً عند فتح محادثة
+        setTimeout(() => {
+          if (containerRef.current) {
+            containerRef.current.scrollTop = containerRef.current.scrollHeight;
+          }
+        }, 100);
       });
     }
   }, [conversationId]);
 
-  const loadMore = () => {
-    const nextPage = page + 1;
-    const nextMessages = allMessages.slice(0, nextPage * PAGE_SIZE);
-    setDisplayMessages(nextMessages);
-    setPage(nextPage);
-  };
+  const handleScroll = useCallback(() => {
+    if (!containerRef.current) return;
+    const { scrollTop } = containerRef.current;
+    
+    // إذا اقترب المستخدم من الأعلى، نحمل المزيد (هذا للمحادثات القديمة)
+    // ولكن للتبسيط هنا سنستخدم زر "تحميل المزيد" أو التمرير لأسفل لزيادة العدد المرئي
+    if (scrollTop < 200 && visibleCount < allMessages.length) {
+       // منطق التحميل العكسي يمكن وضعه هنا
+    }
+  }, [allMessages.length, visibleCount]);
+
+  const displayMessages = useMemo(() => {
+    // عرض آخر N رسالة فقط للأداء
+    return allMessages.slice(-visibleCount);
+  }, [allMessages, visibleCount]);
 
   const groupedByDay = useMemo(() => {
     const groups: { date: string, msgs: StandardizedMessage[] }[] = [];
@@ -63,137 +70,116 @@ const ConversationTimeline: React.FC<TimelineProps> = ({ conversationId, convers
     return groups;
   }, [displayMessages]);
 
+  const loadMore = () => setVisibleCount(prev => prev + 200);
+
   const handleSummarize = async () => {
     setIsSummarizing(true);
-    // نلخص آخر 100 رسالة فقط للأداء والدقة
-    const res = await summarizeConversation(allMessages.slice(-100));
+    const res = await summarizeConversation(allMessages.slice(-60));
     setSummary(res);
     setIsSummarizing(false);
   };
 
   if (!conversationId) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-20 opacity-30 text-center">
-         <div className="w-20 h-20 bg-white/5 rounded-3xl flex items-center justify-center mb-6">
-            <MessageSquare size={40} className="text-gray-600" />
+      <div className="flex-1 flex flex-col items-center justify-center p-10 md:p-20 opacity-30 text-center bg-[#060606]">
+         <div className="w-16 h-16 md:w-24 md:h-24 bg-white/5 rounded-3xl flex items-center justify-center mb-6 border border-white/5">
+            <MessageSquare size={32} className="text-gray-600" />
          </div>
-         <h2 className="text-2xl font-black">اختر محادثة للاستعراض</h2>
-         <p className="text-sm mt-2 font-medium">نظام التحميل الذكي يضمن عرض آلاف السجلات بلمح البصر.</p>
+         <h2 className="text-xl md:text-2xl font-black">جاهز لاستدعاء الذاكرة</h2>
+         <p className="text-[10px] md:text-sm mt-2 font-medium max-w-xs">اختر سجلاً من القائمة الجانبية للغوص في التفاصيل.</p>
       </div>
     );
   }
 
   return (
     <div className="flex-1 flex flex-col h-full bg-[#060606] overflow-hidden" dir="rtl">
-      <header className="px-4 md:px-10 py-4 border-b border-white/5 flex items-center justify-between sticky top-0 bg-[#060606]/95 backdrop-blur-xl z-20">
-        <div className="flex items-center gap-3 md:gap-6 min-w-0">
-          <div className="w-9 h-9 md:w-12 md:h-12 bg-white/5 rounded-xl flex items-center justify-center border border-white/10 shrink-0">
-             {conversation?.source === 'whatsapp' ? <User className="text-green-500" size={18} /> : <Bot className="text-indigo-500" size={18} />}
+      <header className="px-5 py-4 border-b border-white/5 flex items-center justify-between sticky top-0 bg-[#060606]/95 backdrop-blur-xl z-20 shrink-0">
+        <div className="flex items-center gap-4 min-w-0">
+          <div className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center border border-white/10 shrink-0">
+             {conversation?.source === 'whatsapp' ? <User className="text-green-500" size={16} /> : <Bot className="text-indigo-500" size={16} />}
           </div>
           <div className="min-w-0">
-            <h2 className="text-sm md:text-xl font-black text-white truncate">{conversation?.title || "تحميل..."}</h2>
-            <div className="flex gap-2 text-[8px] md:text-[10px] text-gray-500 font-black uppercase tracking-widest">
-               <span>{conversation?.source}</span>
-               <span>•</span>
-               <span className="text-indigo-400">{allMessages.length} سجل إجمالي</span>
+            <h2 className="text-sm font-black text-white truncate">{conversation?.title || "تحميل السجلات..."}</h2>
+            <div className="flex gap-2 text-[9px] text-gray-600 font-black uppercase tracking-widest">
+               <span className="text-indigo-500/50">{allMessages.length} رسالة مخزنة</span>
             </div>
           </div>
         </div>
         
         <div className="flex gap-2">
-          <button onClick={handleSummarize} disabled={isSummarizing || isLoading} title="ملخص ذكي" className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-all">
+          <button onClick={handleSummarize} disabled={isSummarizing || isLoading} className="p-2.5 bg-white/5 hover:bg-white/10 rounded-xl text-gray-400 transition-all">
             {isSummarizing ? <Loader2 size={16} className="animate-spin" /> : <BookOpen size={16} />}
-          </button>
-          <button onClick={() => setShowPromptPicker(true)} disabled={isLoading} title="تحليل متقدم" className="p-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-white shadow-lg shadow-indigo-600/20 transition-all">
-            <Sparkles size={16} />
           </button>
         </div>
       </header>
 
-      <div ref={containerRef} className="flex-1 overflow-y-auto px-4 md:px-10 py-6 space-y-8 custom-scrollbar scroll-smooth">
+      <div 
+        ref={containerRef} 
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto px-4 md:px-12 py-8 space-y-10 custom-scrollbar scroll-smooth"
+      >
         {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-4 opacity-50">
-             <Loader2 size={32} className="animate-spin text-indigo-500" />
-             <p className="text-[10px] font-black uppercase tracking-[0.2em]">جاري استرجاع السجلات العميقة...</p>
+          <div className="flex flex-col items-center justify-center py-24 gap-4 opacity-40">
+             <div className="w-10 h-10 border-2 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin" />
+             <p className="text-[10px] font-black uppercase tracking-[0.3em]">جاري استعادة 60,000+ نقطة بيانات...</p>
           </div>
         ) : (
           <>
+            {allMessages.length > visibleCount && (
+              <div className="flex justify-center pb-8">
+                 <button onClick={loadMore} className="text-[10px] font-black text-gray-600 hover:text-indigo-400 flex items-center gap-2 uppercase tracking-widest bg-white/5 px-6 py-2.5 rounded-full border border-white/5 transition-all">
+                    <ChevronDown size={14} /> تحميل سجلات أقدم
+                 </button>
+              </div>
+            )}
+
             {summary && (
-              <div className="p-6 bg-indigo-900/10 border border-indigo-500/20 rounded-3xl relative animate-fade-in shadow-xl">
-                <h4 className="text-[9px] font-black text-indigo-400 uppercase mb-3 flex items-center gap-2 tracking-[0.2em]">
-                  <Sparkles size={10} /> الرؤية الذكية (AI Summary)
-                </h4>
-                <p className="text-gray-200 text-xs md:text-base leading-loose italic">"{summary}"</p>
-                <button onClick={() => setSummary(null)} className="absolute top-4 left-4 text-gray-600 hover:text-white"><X size={14}/></button>
+              <div className="p-6 bg-indigo-900/10 border border-indigo-500/20 rounded-[2rem] relative animate-fade-in shadow-xl mb-10">
+                <p className="text-gray-200 text-sm md:text-base leading-loose italic">"{summary}"</p>
               </div>
             )}
 
             {groupedByDay.map(group => (
-              <div key={group.date} className="space-y-4">
-                <div className="flex items-center gap-3">
+              <div key={group.date} className="space-y-6">
+                <div className="flex items-center gap-4">
                   <div className="h-px flex-1 bg-white/5"></div>
-                  <div className="text-[8px] font-black text-gray-600 uppercase tracking-[0.3em] bg-[#0D0D0D] px-4 py-1.5 rounded-full border border-white/5 shadow-inner">
-                    {group.date}
-                  </div>
+                  <div className="text-[9px] font-black text-gray-700 uppercase tracking-[0.2em]">{group.date}</div>
                   <div className="h-px flex-1 bg-white/5"></div>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-6">
                   {group.msgs.map(m => (
-                    <div key={m.id} className={`flex flex-col group animate-fade-in ${m.direction === 'sent' ? 'items-end' : 'items-start'}`}>
-                      <div className="flex items-center gap-2 mb-1.5 px-1">
-                        <span className="text-[9px] font-black text-indigo-400 uppercase tracking-tighter">{m.sender}</span>
-                        <span className="text-[8px] text-gray-700 font-bold">{new Date(m.timestamp).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span>
+                    <div key={m.id} className={`flex flex-col animate-fade-in ${m.direction === 'sent' ? 'items-end' : 'items-start'}`}>
+                      <div className="flex items-center gap-2 mb-2 opacity-40">
+                        <span className="text-[9px] font-black uppercase text-indigo-400">{m.sender}</span>
+                        <span className="text-[8px] font-bold text-gray-500">{new Date(m.timestamp).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span>
                       </div>
-                      <div className={`p-4 md:p-6 rounded-[2rem] max-w-[90%] md:max-w-[70%] border transition-all hover:border-white/10 ${
+                      <div className={`p-5 md:p-6 rounded-[2rem] max-w-[95%] md:max-w-[80%] border transition-all ${
                         m.direction === 'sent' 
-                        ? 'bg-indigo-600/10 border-indigo-500/20 text-indigo-100 rounded-tr-none' 
-                        : 'bg-[#0D0D0D] border-white/5 text-gray-200 rounded-tl-none'
+                        ? 'bg-indigo-600/10 border-indigo-500/20 text-indigo-50 rounded-tr-none shadow-[0_10px_30px_rgba(79,70,229,0.05)]' 
+                        : 'bg-[#0D0D0D] border-white/5 text-gray-300 rounded-tl-none shadow-xl'
                       }`}>
-                        <p className="text-xs md:text-[15px] leading-relaxed whitespace-pre-wrap font-medium">{m.content}</p>
+                        <p className="text-[13px] md:text-[15px] leading-relaxed whitespace-pre-wrap">{m.content}</p>
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
             ))}
-
-            {displayMessages.length < allMessages.length && (
-              <div className="flex justify-center py-10">
-                <button 
-                  onClick={loadMore}
-                  className="px-8 py-3 bg-[#0D0D0D] border border-white/5 hover:border-indigo-500/30 text-gray-500 hover:text-indigo-400 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 transition-all"
-                >
-                  <ChevronDown size={14} /> عرض المزيد من السجلات
-                </button>
-              </div>
-            )}
+            
+            <div className="h-20" /> {/* Space at bottom */}
           </>
         )}
       </div>
-
-      {showPromptPicker && (
-        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6 animate-fade-in" onClick={() => setShowPromptPicker(false)}>
-          <div className="w-full max-w-md bg-[#0F0F0F] rounded-[3rem] border border-white/10 p-8 shadow-2xl shadow-indigo-600/5" onClick={e => e.stopPropagation()}>
-             <h3 className="font-black text-indigo-400 mb-8 uppercase tracking-[0.2em] flex items-center gap-3">
-               <Sparkles size={18} /> قوالب التحليل الذكي
-             </h3>
-             <div className="space-y-3 max-h-80 overflow-y-auto custom-scrollbar">
-                {templates.map(t => (
-                  <button key={t.id} className="w-full text-right p-5 bg-white/5 hover:bg-indigo-600/20 rounded-2xl border border-white/5 hover:border-indigo-500/30 transition-all group">
-                    <p className="font-black text-xs text-white group-hover:text-indigo-400">{t.title}</p>
-                    <p className="text-[9px] text-gray-600 mt-1 line-clamp-1">{t.category}</p>
-                  </button>
-                ))}
-                {templates.length === 0 && (
-                  <div className="text-center py-10 opacity-30">
-                    <BookOpen size={32} className="mx-auto mb-2" />
-                    <p className="text-[10px] font-black uppercase">لا توجد قوالب محفوظة</p>
-                  </div>
-                )}
-             </div>
-          </div>
-        </div>
+      
+      {/* Scroll to bottom button */}
+      {!isLoading && allMessages.length > 0 && (
+        <button 
+          onClick={() => containerRef.current?.scrollTo(0, containerRef.current.scrollHeight)}
+          className="fixed bottom-24 left-8 md:left-12 p-4 bg-indigo-600 text-white rounded-full shadow-2xl shadow-indigo-600/40 hover:scale-110 transition-all z-30 active:scale-95"
+        >
+          <ArrowDown size={20} />
+        </button>
       )}
     </div>
   );
