@@ -4,7 +4,8 @@ import {
   Shield, User, Heart, MessageCircle, Folder, FileText, 
   Search, Zap, Filter, ChevronDown, ChevronUp, Copy, Check, Download, Sparkles 
 } from "lucide-react";
-import { allData } from "../data/index";
+// Use getAllUnifiedMessages instead of the non-existent allData export
+import { getAllUnifiedMessages } from "../data/index";
 import { searchMessagesInDB } from "../utils/db";
 
 /**
@@ -18,36 +19,35 @@ export const searchMemory = async (query: string) => {
   let intelligenceDossiers: any[] = [];
 
   // 1. البحث في البيانات الثابتة (Static Data)
-  Object.entries(allData).forEach(([fileName, dataset]) => {
-    if (!Array.isArray(dataset)) return;
+  // Using the unified messages engine to scan static archives
+  const staticMessages = getAllUnifiedMessages();
 
-    dataset.forEach((entry) => {
-      let relevanceScore = 0;
-      const subjectName = entry.name || entry.title || entry.sender || 'مجهول';
+  staticMessages.forEach((entry: any) => {
+    let relevanceScore = 0;
+    const subjectName = entry.name || entry.title || entry.sender || 'مجهول';
 
-      const weights: Record<string, number> = { 
-        name: 10, title: 8, content: 7, message: 7, text: 6, background: 4, definition: 5
-      };
+    const weights: Record<string, number> = { 
+      name: 10, title: 8, content: 7, message: 7, text: 6, background: 4, definition: 5
+    };
 
-      Object.entries(entry).forEach(([key, value]) => {
-        if (typeof value === 'string') {
-          const val = value.toLowerCase();
-          if (val.includes(lowerQuery)) {
-            relevanceScore += (weights[key] || 1);
-            if (val === lowerQuery) relevanceScore += 10;
-          }
+    Object.entries(entry).forEach(([key, value]) => {
+      if (typeof value === 'string') {
+        const val = value.toLowerCase();
+        if (val.includes(lowerQuery)) {
+          relevanceScore += (weights[key] || 1);
+          if (val === lowerQuery) relevanceScore += 10;
         }
-      });
-
-      if (relevanceScore > 0) {
-        intelligenceDossiers.push({
-          subject: subjectName,
-          content: entry,
-          sourceFile: `${fileName}.json`,
-          relevanceScore: relevanceScore
-        });
       }
     });
+
+    if (relevanceScore > 0) {
+      intelligenceDossiers.push({
+        subject: subjectName,
+        content: entry,
+        sourceFile: entry.sourceFile || 'static_file',
+        relevanceScore: relevanceScore
+      });
+    }
   });
 
   // 2. البحث في قاعدة البيانات المحلية (IndexedDB)

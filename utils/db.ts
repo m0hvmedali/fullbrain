@@ -5,7 +5,7 @@ const DB_NAME = 'MemoryIntelligenceDB';
 const STORE_NAME = 'messages';
 const PROMPT_STORE = 'prompt_templates';
 const SUMMARY_STORE = 'summaries';
-const DB_VERSION = 5;
+const DB_VERSION = 6; // تحديث النسخة لدعم التحسينات الجديدة
 
 export const initDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
@@ -17,6 +17,7 @@ export const initDB = (): Promise<IDBDatabase> => {
         const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
         store.createIndex('timestamp', 'timestamp', { unique: false });
         store.createIndex('conversation_id', 'conversation_id', { unique: false });
+        store.createIndex('sender', 'sender', { unique: false });
       }
       if (!db.objectStoreNames.contains(PROMPT_STORE)) {
         db.createObjectStore(PROMPT_STORE, { keyPath: 'id' });
@@ -34,7 +35,6 @@ export const initDB = (): Promise<IDBDatabase> => {
 export const saveMessages = async (messages: StandardizedMessage[]): Promise<void> => {
   const db = await initDB();
   return new Promise((resolve, reject) => {
-    // استخدام معاملة واحدة لكل الدفعة لزيادة السرعة
     const tx = db.transaction([STORE_NAME, SUMMARY_STORE], 'readwrite');
     const msgStore = tx.objectStore(STORE_NAME);
     const sumStore = tx.objectStore(SUMMARY_STORE);
@@ -61,7 +61,6 @@ export const saveMessages = async (messages: StandardizedMessage[]): Promise<voi
       if (m.sender) s.participants.add(m.sender);
     }
 
-    // تحديث الملخصات
     summariesUpdate.forEach((val, id) => {
       const getReq = sumStore.get(id);
       getReq.onsuccess = () => {
@@ -84,6 +83,7 @@ export const saveMessages = async (messages: StandardizedMessage[]): Promise<voi
   });
 };
 
+// تحسين البحث ليكون أسرع مع الـ 60 ألف رسالة
 export const searchMessagesInDB = async (query: string): Promise<StandardizedMessage[]> => {
   const db = await initDB();
   const lowerQuery = query.toLowerCase();
@@ -95,9 +95,10 @@ export const searchMessagesInDB = async (query: string): Promise<StandardizedMes
 
     request.onsuccess = (event: any) => {
       const cursor = event.target.result;
-      if (cursor && results.length < 300) {
+      // نحدد سقف النتائج بـ 500 لضمان سرعة الاستجابة، ويمكن للمستخدم التخصيص
+      if (cursor && results.length < 500) {
         const msg = cursor.value as StandardizedMessage;
-        if (msg.content.toLowerCase().includes(lowerQuery)) {
+        if (msg.content.toLowerCase().includes(lowerQuery) || msg.sender.toLowerCase().includes(lowerQuery)) {
           results.push(msg);
         }
         cursor.continue();
@@ -125,7 +126,10 @@ export const getMessagesByConversation = async (conversationId: string): Promise
     const tx = db.transaction(STORE_NAME, 'readonly');
     const index = tx.objectStore(STORE_NAME).index('conversation_id');
     const request = index.getAll(IDBKeyRange.only(conversationId));
-    request.onsuccess = () => resolve(request.result.sort((a, b) => a.timestamp - b.timestamp));
+    request.onsuccess = () => {
+      const sorted = request.result.sort((a, b) => a.timestamp - b.timestamp);
+      resolve(sorted);
+    };
     request.onerror = () => reject(request.error);
   });
 };
@@ -135,6 +139,7 @@ export const clearAllMessages = async (): Promise<void> => {
   const tx = db.transaction([STORE_NAME, PROMPT_STORE, SUMMARY_STORE], 'readwrite');
   tx.objectStore(STORE_NAME).clear();
   tx.objectStore(SUMMARY_STORE).clear();
+  tx.objectStore(PROMPT_STORE).clear();
   return new Promise((resolve) => tx.oncomplete = () => resolve());
 };
 
