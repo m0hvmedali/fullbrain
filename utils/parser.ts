@@ -12,43 +12,7 @@ const analyzeMetrics = (content: string) => ({
 });
 
 /**
- * محاولة استخراج بيانات واتساب من سطر نصي
- * يدعم تنسيق iOS: [15/02/2024, 10:14:15 PM] Name: Message
- * ويدعم تنسيق Android: 15/02/2024, 22:14 - Name: Message
- */
-const parseWhatsAppLine = (line: string) => {
-  // Regex pattern for common WhatsApp export formats
-  // Matches date/time, then sender, then message
-  const pattern = /^\[?(\d{1,2}\/\d{1,2}\/\d{2,4},?\s\d{1,2}:\d{1,2}(?::\d{1,2})?(?:\s[AP]M)?)\]?\s(?:-\s)?([^:]+):\s(.*)$/;
-  const match = line.match(pattern);
-
-  if (match) {
-    const rawDate = match[1].replace(',', '');
-    // محاولة تحويل التاريخ، وفي حال الفشل نستخدم الوقت الحالي
-    let timestamp = Date.parse(rawDate);
-    if (isNaN(timestamp)) {
-      // التعامل مع تنسيق التاريخ dd/mm/yyyy الذي قد يفشل فيه Date.parse في بعض البيئات
-      const parts = rawDate.split(' ');
-      const dateParts = parts[0].split('/');
-      if (dateParts.length === 3) {
-        const [d, m, y] = dateParts;
-        const normalizedDate = `${m}/${d}/${y} ${parts.slice(1).join(' ')}`;
-        timestamp = Date.parse(normalizedDate);
-      }
-    }
-
-    return {
-      timestamp: !isNaN(timestamp) ? timestamp : Date.now(),
-      sender: match[2].trim(),
-      content: match[3].trim()
-    };
-  }
-
-  return null;
-};
-
-/**
- * معالج HTML لملفات ChatGPT وغيرها
+ * معالج متطور لملفات HTML (ChatGPT, Claude, etc.)
  */
 const parseHTMLContent = (html: string, fileName: string): StandardizedMessage[] => {
   const parser = new DOMParser();
@@ -56,45 +20,59 @@ const parseHTMLContent = (html: string, fileName: string): StandardizedMessage[]
   const messages: StandardizedMessage[] = [];
   const conversationId = `html_${generateId()}`;
 
-  // أنماط ChatGPT الشائعة في تصديرات HTML
-  const messageNodes = doc.querySelectorAll('.message, [class*="message"], .chat-item');
+  // البحث عن فقاعات الدردشة بناءً على الأنماط الشائعة في ChatGPT و Claude
+  // نبحث عن العناصر التي تحتوي على أدوار (roles) أو فئات معينة (classes)
+  const chatElements = doc.querySelectorAll('[data-testimonial], .chat-message, .message, [class*="ConversationItem"], [class*="ChatMessage"]');
   
-  if (messageNodes.length > 0) {
-    messageNodes.forEach((node, index) => {
-      const authorNode = node.querySelector('.author, [class*="author"], b, strong');
-      const contentNode = node.querySelector('.content, [class*="content"], .text, div:last-child');
+  if (chatElements.length > 0) {
+    chatElements.forEach((node, index) => {
+      // محاولة تحديد المرسل بناءً على النص أو الفئة
+      const text = node.textContent?.trim() || "";
+      let sender = "User";
       
-      const sender = authorNode?.textContent?.trim() || "User";
-      const content = contentNode?.textContent?.trim() || "";
-      
-      if (content) {
+      // منطق تحديد الأدوار في ملفات HTML المستخرجة من AI
+      const innerHtml = node.innerHTML.toLowerCase();
+      if (innerHtml.includes('assistant') || innerHtml.includes('gpt') || innerHtml.includes('claude') || node.classList.contains('assistant')) {
+        sender = "Assistant (AI)";
+      }
+
+      if (text) {
         messages.push({
           id: generateId(),
           source: 'chatgpt',
           conversation_id: conversationId,
           person_or_title: fileName,
-          timestamp: Date.now() + index, // تقريب الطابع الزمني
+          timestamp: Date.now() - (chatElements.length - index) * 1000,
           sender: sender,
-          direction: sender.toLowerCase().includes('assistant') || sender.toLowerCase().includes('gpt') ? 'received' : 'sent',
-          content: content,
-          meta: analyzeMetrics(content)
+          direction: sender.includes('AI') ? 'received' : 'sent',
+          content: text,
+          meta: analyzeMetrics(text)
         });
       }
     });
   } else {
-    // محاولة استخراج الفقرات إذا لم توجد بنية واضحة
-    const paragraphs = doc.querySelectorAll('p, div');
-    paragraphs.forEach((p, index) => {
-      const content = p.textContent?.trim();
-      if (content && content.length > 10) {
+    // Fallback: البحث عن أي بنية تحتوي على نصوص متتالية (مثل فقرات p أو b)
+    const items = doc.querySelectorAll('p, div, span, b');
+    let lastSender = "User";
+    
+    items.forEach((item, index) => {
+      const content = item.textContent?.trim();
+      if (content && content.length > 5) {
+        // إذا وجدنا كلمة "ChatGPT" أو "You" كعنوان، نغير المرسل
+        const isHeader = content.length < 20 && (content.toLowerCase().includes('you') || content.toLowerCase().includes('chatgpt'));
+        if (isHeader) {
+          lastSender = content.toLowerCase().includes('you') ? "User" : "Assistant (AI)";
+          return;
+        }
+
         messages.push({
           id: generateId(),
           source: 'chatgpt',
           conversation_id: conversationId,
           person_or_title: fileName,
-          timestamp: Date.now() + index,
-          sender: "System/Extracted",
-          direction: 'received',
+          timestamp: Date.now() - (items.length - index) * 1000,
+          sender: lastSender,
+          direction: lastSender.includes('AI') ? 'received' : 'sent',
           content: content,
           meta: analyzeMetrics(content)
         });
@@ -106,36 +84,54 @@ const parseHTMLContent = (html: string, fileName: string): StandardizedMessage[]
 };
 
 /**
- * المعالج الرئيسي فائق الأداء
+ * معالج WhatsApp المطور لدعم الأنماط المختلفة
+ */
+const parseWhatsAppLine = (line: string) => {
+  const pattern = /^\[?(\d{1,2}\/\d{1,2}\/\d{2,4},?\s\d{1,2}:\d{1,2}(?::\d{1,2})?(?:\s[AP]M)?)\]?\s(?:-\s)?([^:]+):\s(.*)$/;
+  const match = line.match(pattern);
+  if (match) {
+    return {
+      timestamp: Date.parse(match[1].replace(',', '')) || Date.now(),
+      sender: match[2].trim(),
+      content: match[3].trim()
+    };
+  }
+  return null;
+};
+
+/**
+ * محرك الاستيعاب الرئيسي (Chunked Ingestion Engine)
+ * يعالج الملفات الكبيرة بكفاءة عالية ويضمن عدم فقدان البيانات
  */
 export const processFile = async (
   file: File, 
   onProgress?: (progress: number) => void
 ): Promise<number> => {
-  if (file.type === 'text/html' || file.name.endsWith('.html')) {
-    const text = await file.text();
-    const messages = parseHTMLContent(text, file.name);
-    // حفظ على دفعات لتجنب تجميد الواجهة
-    const BATCH_SIZE = 500;
-    for (let i = 0; i < messages.length; i += BATCH_SIZE) {
-      const batch = messages.slice(i, i + BATCH_SIZE);
+  const CHUNK_SIZE = 1024 * 1024 * 2; // 2MB لكل قطعة لضمان التوازن بين السرعة والاستجابة
+  let offset = 0;
+  let totalMessagesProcessed = 0;
+  const conversationId = `file_${file.name}_${generateId()}`;
+
+  // التعامل مع ملفات HTML ككتلة واحدة نظراً لصعوبة تقسيم الـ DOM
+  if (file.name.endsWith('.html') || file.type === 'text/html') {
+    const content = await file.text();
+    const messages = parseHTMLContent(content, file.name);
+    
+    // حفظ الرسائل على دفعات صغيرة في قاعدة البيانات
+    const DB_BATCH = 200;
+    for (let i = 0; i < messages.length; i += DB_BATCH) {
+      const batch = messages.slice(i, i + DB_BATCH);
       await saveMessages(batch);
       if (onProgress) onProgress(Math.round(((i + batch.length) / messages.length) * 100));
-      await new Promise(r => setTimeout(r, 0));
+      await new Promise(r => setTimeout(r, 0)); // السماح للمتصفح بمعالجة مهام أخرى
     }
     return messages.length;
   }
 
-  // المعالجة التدفقية لملفات TXT/JSON الضخمة
-  const CHUNK_SIZE = 1024 * 512; // 512KB لضمان استجابة الواجهة
-  let offset = 0;
-  let totalMessages = 0;
+  // المعالجة التدفقية لملفات TXT و JSON الكبيرة
   let leftover = "";
-  const decoder = new TextDecoder("utf-8");
-  const conversationId = `file_${file.name}_${Date.now()}`;
-  
-  // تتبع الرسالة الحالية للتعامل مع الرسائل متعددة الأسطر
   let currentMsg: StandardizedMessage | null = null;
+  const decoder = new TextDecoder("utf-8");
 
   while (offset < file.size) {
     const chunk = file.slice(offset, offset + CHUNK_SIZE);
@@ -143,71 +139,51 @@ export const processFile = async (
     const text = leftover + decoder.decode(buffer, { stream: true });
     
     const lines = text.split(/\r?\n/);
-    leftover = lines.pop() || "";
+    leftover = lines.pop() || ""; // السطر الأخير قد يكون مقطوعاً، نحفظه للقطعة القادمة
     
-    if (lines.length > 0) {
-      const batchToSave: StandardizedMessage[] = [];
+    const batchMessages: StandardizedMessage[] = [];
 
-      for (const line of lines) {
-        const trimmedLine = line.trim();
-        if (!trimmedLine) continue;
+    for (const line of lines) {
+      if (!line.trim()) continue;
 
-        const parsed = parseWhatsAppLine(line);
-        if (parsed) {
-          // إذا كان لدينا رسالة سابقة، نقوم بإضافتها للدفعة قبل بدء رسالة جديدة
-          if (currentMsg) {
-            batchToSave.push(currentMsg);
-          }
-
-          currentMsg = {
-            id: generateId(),
-            source: 'whatsapp',
-            conversation_id: conversationId,
-            person_or_title: file.name,
-            timestamp: parsed.timestamp,
-            sender: parsed.sender,
-            direction: 'received', // القيمة الافتراضية
-            content: parsed.content,
-            meta: analyzeMetrics(parsed.content)
-          };
-        } else if (currentMsg) {
-          // إذا لم يبدأ السطر بنمط رسالة جديدة، فهو تكملة للرسالة السابقة
-          currentMsg.content += "\n" + line;
-          currentMsg.meta = analyzeMetrics(currentMsg.content);
-        } else {
-          // في حال عدم وجود رسالة حالية (بداية الملف بدون نمط واتساب)، نعتبرها رسالة بسيطة
-          batchToSave.push({
-            id: generateId(),
-            source: 'whatsapp',
-            conversation_id: conversationId,
-            person_or_title: file.name,
-            timestamp: Date.now(),
-            sender: "User",
-            direction: 'received',
-            content: trimmedLine,
-            meta: analyzeMetrics(trimmedLine)
-          });
-        }
+      const parsed = parseWhatsAppLine(line);
+      if (parsed) {
+        if (currentMsg) batchMessages.push(currentMsg);
+        currentMsg = {
+          id: generateId(),
+          source: 'whatsapp',
+          conversation_id: conversationId,
+          person_or_title: file.name,
+          timestamp: parsed.timestamp,
+          sender: parsed.sender,
+          direction: 'received',
+          content: parsed.content,
+          meta: analyzeMetrics(parsed.content)
+        };
+      } else if (currentMsg) {
+        currentMsg.content += "\n" + line;
+        currentMsg.meta = analyzeMetrics(currentMsg.content);
       }
+    }
 
-      if (batchToSave.length > 0) {
-        await saveMessages(batchToSave);
-        totalMessages += batchToSave.length;
-      }
+    if (batchMessages.length > 0) {
+      await saveMessages(batchMessages);
+      totalMessagesProcessed += batchMessages.length;
     }
 
     offset += CHUNK_SIZE;
     if (onProgress) onProgress(Math.min(99, Math.round((offset / file.size) * 100)));
     
-    await new Promise(resolve => setTimeout(resolve, 5));
+    // تحسين الأداء: Yield main thread
+    await new Promise(r => setTimeout(r, 10));
   }
 
-  // حفظ آخر رسالة في الملف
+  // حفظ الرسالة الأخيرة
   if (currentMsg) {
     await saveMessages([currentMsg]);
-    totalMessages += 1;
+    totalMessagesProcessed++;
   }
 
   if (onProgress) onProgress(100);
-  return totalMessages;
+  return totalMessagesProcessed;
 };

@@ -1,10 +1,9 @@
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { StandardizedMessage, ConversationSummary, PromptTemplate } from '../types';
-// Added MessageSquare to the imports from lucide-react
-import { Calendar, Copy, Check, Sparkles, X, Loader2, BookOpen, User, Bot, Clock, TrendingUp, MessageSquare } from 'lucide-react';
+import { Calendar, Copy, Check, Sparkles, X, Loader2, BookOpen, User, Bot, Clock, MessageSquare, ChevronDown } from 'lucide-react';
 import { getPromptTemplates, getMessagesByConversation } from '../utils/db';
-import { getAI, summarizeConversation, AI_MODELS } from '../utils/ai';
+import { summarizeConversation } from '../utils/ai';
 
 interface TimelineProps {
   conversationId: string | null;
@@ -12,35 +11,45 @@ interface TimelineProps {
 }
 
 const ConversationTimeline: React.FC<TimelineProps> = ({ conversationId, conversation }) => {
-  const [messages, setMessages] = useState<StandardizedMessage[]>([]);
+  const [allMessages, setAllMessages] = useState<StandardizedMessage[]>([]);
+  const [displayMessages, setDisplayMessages] = useState<StandardizedMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
+  
   const [showPromptPicker, setShowPromptPicker] = useState(false);
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
   const [summary, setSummary] = useState<string | null>(null);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // جلب الرسائل من DB عند تغير المحادثة
   useEffect(() => {
     if (conversationId) {
       setIsLoading(true);
-      setMessages([]);
+      setAllMessages([]);
+      setDisplayMessages([]);
       setSummary(null);
+      setPage(1);
+      
       getMessagesByConversation(conversationId).then(msgs => {
-        setMessages(msgs);
+        setAllMessages(msgs);
+        setDisplayMessages(msgs.slice(0, PAGE_SIZE));
         setIsLoading(false);
         containerRef.current?.scrollTo(0, 0);
       });
     }
   }, [conversationId]);
 
-  useEffect(() => {
-    getPromptTemplates().then(setTemplates);
-  }, []);
+  const loadMore = () => {
+    const nextPage = page + 1;
+    const nextMessages = allMessages.slice(0, nextPage * PAGE_SIZE);
+    setDisplayMessages(nextMessages);
+    setPage(nextPage);
+  };
 
   const groupedByDay = useMemo(() => {
     const groups: { date: string, msgs: StandardizedMessage[] }[] = [];
-    messages.forEach(m => {
+    displayMessages.forEach(m => {
       const dateStr = new Date(m.timestamp).toLocaleDateString('ar-EG', {
         weekday: 'short', month: 'short', day: 'numeric'
       });
@@ -52,11 +61,12 @@ const ConversationTimeline: React.FC<TimelineProps> = ({ conversationId, convers
       }
     });
     return groups;
-  }, [messages]);
+  }, [displayMessages]);
 
   const handleSummarize = async () => {
     setIsSummarizing(true);
-    const res = await summarizeConversation(messages);
+    // نلخص آخر 100 رسالة فقط للأداء والدقة
+    const res = await summarizeConversation(allMessages.slice(-100));
     setSummary(res);
     setIsSummarizing(false);
   };
@@ -68,7 +78,7 @@ const ConversationTimeline: React.FC<TimelineProps> = ({ conversationId, convers
             <MessageSquare size={40} className="text-gray-600" />
          </div>
          <h2 className="text-2xl font-black">اختر محادثة للاستعراض</h2>
-         <p className="text-sm mt-2 font-medium">سيتم جلب البيانات فوراً من مستودع الذاكرة المحلي.</p>
+         <p className="text-sm mt-2 font-medium">نظام التحميل الذكي يضمن عرض آلاف السجلات بلمح البصر.</p>
       </div>
     );
   }
@@ -85,16 +95,16 @@ const ConversationTimeline: React.FC<TimelineProps> = ({ conversationId, convers
             <div className="flex gap-2 text-[8px] md:text-[10px] text-gray-500 font-black uppercase tracking-widest">
                <span>{conversation?.source}</span>
                <span>•</span>
-               <span className="text-indigo-400">{messages.length} سجل</span>
+               <span className="text-indigo-400">{allMessages.length} سجل إجمالي</span>
             </div>
           </div>
         </div>
         
         <div className="flex gap-2">
-          <button onClick={handleSummarize} disabled={isSummarizing || isLoading} className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-all">
+          <button onClick={handleSummarize} disabled={isSummarizing || isLoading} title="ملخص ذكي" className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-all">
             {isSummarizing ? <Loader2 size={16} className="animate-spin" /> : <BookOpen size={16} />}
           </button>
-          <button onClick={() => setShowPromptPicker(true)} disabled={isLoading} className="p-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-white shadow-lg shadow-indigo-600/20 transition-all">
+          <button onClick={() => setShowPromptPicker(true)} disabled={isLoading} title="تحليل متقدم" className="p-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-white shadow-lg shadow-indigo-600/20 transition-all">
             <Sparkles size={16} />
           </button>
         </div>
@@ -104,7 +114,7 @@ const ConversationTimeline: React.FC<TimelineProps> = ({ conversationId, convers
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4 opacity-50">
              <Loader2 size={32} className="animate-spin text-indigo-500" />
-             <p className="text-[10px] font-black uppercase tracking-[0.2em]">جاري استرجاع السجلات...</p>
+             <p className="text-[10px] font-black uppercase tracking-[0.2em]">جاري استرجاع السجلات العميقة...</p>
           </div>
         ) : (
           <>
@@ -147,13 +157,24 @@ const ConversationTimeline: React.FC<TimelineProps> = ({ conversationId, convers
                 </div>
               </div>
             ))}
+
+            {displayMessages.length < allMessages.length && (
+              <div className="flex justify-center py-10">
+                <button 
+                  onClick={loadMore}
+                  className="px-8 py-3 bg-[#0D0D0D] border border-white/5 hover:border-indigo-500/30 text-gray-500 hover:text-indigo-400 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 transition-all"
+                >
+                  <ChevronDown size={14} /> عرض المزيد من السجلات
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>
 
       {showPromptPicker && (
         <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6 animate-fade-in" onClick={() => setShowPromptPicker(false)}>
-          <div className="w-full max-sm bg-[#0F0F0F] rounded-[3rem] border border-white/10 p-8 shadow-2xl shadow-indigo-600/5" onClick={e => e.stopPropagation()}>
+          <div className="w-full max-w-md bg-[#0F0F0F] rounded-[3rem] border border-white/10 p-8 shadow-2xl shadow-indigo-600/5" onClick={e => e.stopPropagation()}>
              <h3 className="font-black text-indigo-400 mb-8 uppercase tracking-[0.2em] flex items-center gap-3">
                <Sparkles size={18} /> قوالب التحليل الذكي
              </h3>
